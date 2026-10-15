@@ -78,9 +78,9 @@ export async function makeThreeView(host,onSelect){
  const api={
   start(){active=true;cancelAnimationFrame(raf);api.resize();raf=requestAnimationFrame(render);},
   stop(){active=false;cancelAnimationFrame(raf);},
-  reset(){camera.position.set(0,12.2,14);orbit.target.set(0,0,0);orbit.update();},
+  reset(player=seat){camera.position.set(0,12.2,player===1?-14:14);orbit.target.set(0,0,0);orbit.update();},
   resize(){if(host.hidden)return;const w=host.clientWidth,h=host.clientHeight;if(!w||!h)return;renderer.setSize(w,h);camera.aspect=w/h;camera.updateProjectionMatrix();reposition();},
-  setState(nextCells,nextSelected,nextSeat,nextCanSelect){cells=nextCells;selected=nextSelected;seat=nextSeat;canSelect=nextCanSelect;update();},
+  setState(nextCells,nextSelected,nextSeat,nextCanSelect){if(seat!==nextSeat && nextSeat!==null)api.reset(nextSeat);cells=nextCells;selected=nextSelected;seat=nextSeat;canSelect=nextCanSelect;update();},
   dispose(){api.stop();labels.forEach(e=>e.remove());renderer.dispose();orbit.dispose();renderer.domElement.remove();}
  };
  return api;

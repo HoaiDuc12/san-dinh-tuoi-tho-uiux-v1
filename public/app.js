@@ -1,276 +1,449 @@
 const $=id=>document.getElementById(id);
-const qs=(s,parent=document)=>parent.querySelector(s);
-const qsa=(s,parent=document)=>[...parent.querySelectorAll(s)];
-const games=[
- {id:'game',name:'Ô Ăn Quan',desc:'Từng viên sỏi, từng nước đi. Chơi 2 người online hoặc luyện tập với máy.',icon:'🪨',theme:'green',group:'strategy',people:'1–2 người',ready:true,badge:'✦ TRÒ NỔI BẬT'},
- {id:'caro',name:'Caro học trò',desc:'Nối năm dấu X hoặc O. Hai người chơi lần lượt trên cùng một thiết bị.',icon:'✏️',theme:'paper',group:'strategy',people:'2 tại chỗ',ready:true,badge:'CHƠI ĐƯỢC'},
- {id:'rps',name:'Oẳn tù tì',desc:'Búa, bao hay kéo? Chơi nhanh với máy và thử vận may.',icon:'✊',theme:'clay',group:'quick',people:'1 người',ready:true,badge:'CHƠI ĐƯỢC'},
- {id:'ganh',name:'Cờ Gánh',desc:'Những nước cờ mưu trí trên bàn gỗ xưa.',icon:'♟',theme:'amber',group:'strategy',people:'2 người',ready:false},
- {id:'lo-co',name:'Nhảy lò cò',desc:'Những ô gạch cùng tiếng cười sân trường.',icon:'🟫',theme:'clay',group:'nostalgia',people:'1 người',ready:false},
- {id:'chuyen',name:'Chơi chuyền',desc:'Khéo tay, nhanh mắt, nhớ từng nhịp.',icon:'🪵',theme:'green',group:'nostalgia',people:'1 người',ready:false},
- {id:'banh-dua',name:'Banh đũa',desc:'Trò khéo léo quen thuộc trong những buổi chiều.',icon:'🥢',theme:'amber',group:'nostalgia',people:'1 người',ready:false},
- {id:'do-vui',name:'Đố vui dân gian',desc:'Câu đố vui từ ông bà, từ làng xóm.',icon:'📜',theme:'paper',group:'quick',people:'1–4 người',ready:false},
- {id:'bit-mat',name:'Bịt mắt bắt dê',desc:'Tiếng gọi bạn bè vang khắp sân đình.',icon:'🐐',theme:'indigo',group:'nostalgia',people:'2+ người',ready:false},
- {id:'rong-ran',name:'Rồng rắn lên mây',desc:'Một hàng dài nối nhau qua ký ức tuổi nhỏ.',icon:'🐉',theme:'green',group:'nostalgia',people:'2+ người',ready:false}
+const one=(selector,root=document)=>root.querySelector(selector);
+const all=(selector,root=document)=>[...root.querySelectorAll(selector)];
+const sleep=ms=>new Promise(resolve=>setTimeout(resolve,ms));
+const copy=value=>structuredClone(value);
+const setText=(id,value)=>{const el=$(id);if(el)el.textContent=value;};
+const GAME_DATA=[
+ {id:'quan',name:'Ô Ăn Quan',emoji:'🪨',desc:'Nhặt sỏi, rải quân, ăn Quan — một ván cờ tuổi thơ.',color:'green',online:true},
+ {id:'ganh',name:'Cờ Gánh',emoji:'♟️',desc:'Đi theo đường kẻ, gánh và vây quân đối thủ.',color:'ochre',online:true},
+ {id:'caro',name:'Caro học trò',emoji:'✏️',desc:'Năm dấu liên tiếp, một lời hẹn trên trang giấy.',color:'paper',online:true},
+ {id:'rps',name:'Oẳn tù tì',emoji:'✊',desc:'Hai người chọn kín rồi cùng lật. Ai thắng ba lượt?',color:'rose',online:true},
+ {id:'lo-co',name:'Nhảy lò cò',emoji:'🟫',desc:'Những ô gạch và tiếng cười sân trường.',color:'ochre',online:false},
+ {id:'chuyen',name:'Chơi chuyền',emoji:'🪵',desc:'Khéo tay, nhanh mắt, từng nhịp tuổi thơ.',color:'green',online:false},
+ {id:'banh-dua',name:'Banh đũa',emoji:'🥢',desc:'Nhịp tay và những chiếc que tre.',color:'paper',online:false},
+ {id:'do-vui',name:'Đố vui dân gian',emoji:'📜',desc:'Những câu đố của ông bà để lại.',color:'rose',online:false},
+ {id:'bit-mat',name:'Bịt mắt bắt dê',emoji:'🐐',desc:'Gọi nhau í ới khắp sân đình.',color:'green',online:false},
+ {id:'rong-ran',name:'Rồng rắn lên mây',emoji:'🐉',desc:'Chạy thành hàng dài qua ký ức.',color:'ochre',online:false}
 ];
-const initial=()=>({cells:Array.from({length:12},(_,i)=>({n:[5,11].includes(i)?0:5,q:[5,11].includes(i)?1:0})),score:[0,0],borrow:[0,0],turn:0,status:'playing',winner:null,seq:0});
-const clone=s=>JSON.parse(JSON.stringify(s));
-const STORE='san-dinh-session-v2';
-const game={state:initial(),visual:initial(),seat:null,connected:[false,false],solo:false,room:'',token:'',socket:null,selected:null,busy:false,rematch:[false,false],lastAnimation:null,reconnectTimer:null,intentional:false,live:false,graphic3d:false,graphics:null,animationSeq:0,animationEvents:new Map()};
-let profile={name:'Người bạn sân đình',matches:0,wins:0,rps:0};
-try{profile={...profile,...JSON.parse(localStorage.getItem('san-dinh-profile')||'{}')};}catch{}
-const saveProfile=()=>{localStorage.setItem('san-dinh-profile',JSON.stringify(profile));updateProfile();};
-function toast(text){$('toast').textContent=text;$('toast').classList.add('show');clearTimeout(toast.timer);toast.timer=setTimeout(()=>$('toast').classList.remove('show'),3300);}
-let soundEnabled=localStorage.getItem('san-dinh-sound')!=='off',audio;
-function ding(type='stone'){
- if(!soundEnabled)return;
- try{audio??=new (window.AudioContext||window.webkitAudioContext)();if(audio.state==='suspended')audio.resume();const oscillator=audio.createOscillator(),gain=audio.createGain(),now=audio.currentTime;
- oscillator.type=type==='capture'?'triangle':'sine';oscillator.frequency.setValueAtTime(type==='capture'?320:650+Math.random()*290,now);oscillator.frequency.exponentialRampToValueAtTime(type==='capture'?160:280,now+.17);
- gain.gain.setValueAtTime(type==='capture'?.05:.025,now);gain.gain.exponentialRampToValueAtTime(.0001,now+.18);oscillator.connect(gain).connect(audio.destination);oscillator.start(now);oscillator.stop(now+.19);
- }catch{}
+const GAME_BY_ID=Object.fromEntries(GAME_DATA.map(g=>[g.id,g]));
+const SESSION_KEY='sandinh-v3-room';
+let nickname=localStorage.getItem('sandinh-name')||'Người bạn sân đình';
+const session={room:'',seat:null,token:'',gameId:null,match:null,visual:null,connected:[false,false],players:[{name:'Người chơi 1'},{name:'Người chơi 2'}],rematch:[false,false],socket:null,retry:null,intentional:false,selected:null,busy:false,graphics:null,three:false,events:new Map(),playback:false,pending:[],lastGame:null,history:[],solo:false};
+const pitNodes=new Map();let currentView='home';let toastTimer=null,animGeneration=0;
+const reduceMotion=()=>matchMedia('(prefers-reduced-motion: reduce)').matches;
+let sound=localStorage.getItem('sandinh-sound')!=='off',audioCtx=null;
+function beep(freq=550,volume=.02,duration=.12){if(!sound)return;try{audioCtx??=new(window.AudioContext||window.webkitAudioContext)();if(audioCtx.state==='suspended')audioCtx.resume();const osc=audioCtx.createOscillator(),gain=audioCtx.createGain(),at=audioCtx.currentTime;osc.type='sine';osc.frequency.setValueAtTime(freq,at);osc.frequency.exponentialRampToValueAtTime(Math.max(90,freq/2),at+duration);gain.gain.setValueAtTime(volume,at);gain.gain.exponentialRampToValueAtTime(.0001,at+duration);osc.connect(gain).connect(audioCtx.destination);osc.start(at);osc.stop(at+duration);}catch{}}
+function toast(message){$('toast').textContent=message;$('toast').classList.add('show');clearTimeout(toastTimer);toastTimer=setTimeout(()=>$('toast').classList.remove('show'),3400);}
+$('audio-toggle').onclick=()=>{sound=!sound;localStorage.setItem('sandinh-sound',sound?'on':'off');$('audio-toggle').textContent=sound?'♫':'♪̸';toast(sound?'Âm thanh đã bật':'Đã tắt âm thanh');};$('audio-toggle').textContent=sound?'♫':'♪̸';
+
+function view(which){
+ currentView=which;
+ all('.view').forEach(el=>el.classList.toggle('active',el.dataset.viewPage===which));
+ all('[data-view]').forEach(el=>el.classList.toggle('active',el.dataset.view===which));
+ history.replaceState(null,'',location.pathname+location.search+'#'+which);
+ window.scrollTo({top:0,behavior:'instant'});
+ if(which==='lobby')renderLobby();
+ if(which==='play')renderPlay();
+ updateMobileHelpers();
 }
-$('sound').onclick=()=>{soundEnabled=!soundEnabled;localStorage.setItem('san-dinh-sound',soundEnabled?'on':'off');$('sound').textContent=soundEnabled?'♫':'♪̸';toast(soundEnabled?'Đã bật âm thanh':'Đã tắt âm thanh');};$('sound').textContent=soundEnabled?'♫':'♪̸';
-function nav(page){
- if(!qs(`.page[data-page="${page}"]`))page='home';
- qsa('.page').forEach(e=>e.classList.toggle('active',e.dataset.page===page));
- qsa('[data-route]').forEach(b=>b.classList.toggle('active',b.dataset.route===page));
- const label={home:'TRANG CHỦ',library:'THƯ VIỆN',lobby:'PHÒNG BẠN BÈ',game:'Ô ĂN QUAN',profile:'GÓC KÝ ỨC',rps:'OẲN TÙ TÌ',caro:'CARO HỌC TRÒ'};
- $('crumb').textContent=label[page]||'TRANG CHỦ';history.replaceState(null,'',location.pathname+location.search+'#'+page);window.scrollTo({top:0,behavior:'instant'});
- if(page==='game'&&game.graphics)game.graphics.resize();
-}
-document.addEventListener('click',e=>{const b=e.target.closest('[data-route]');if(b)nav(b.dataset.route);});
-function cardHTML(g){return `<article class="game-card theme-${g.theme}"><div class="game-art"><div class="art-motif"></div><span class="art-icon">${g.icon}</span><span class="status-chip ${g.ready?'':'soon'}">${g.ready?g.badge:'ĐANG PHÁT TRIỂN'}</span></div><div class="card-body"><h3>${g.name}</h3><p>${g.desc}</p><div class="card-meta"><span>♧ ${g.people}</span><button ${g.ready?'':'disabled'} data-open-game="${g.id}">${g.ready?'Chơi ngay ↗':'Sắp có'}</button></div></div></article>`;}
+document.addEventListener('click',event=>{const btn=event.target.closest('[data-view]');if(btn)view(btn.dataset.view);});
+function gameCard(g){return `<article class="game-card"><div class="card-art ${g.color}"><span class="card-status ${g.online?'':'soon'}">${g.online?'● CHƠI ONLINE':'SẮP RA MẮT'}</span><span class="card-icon">${g.emoji}</span></div><div class="card-body"><h3>${g.name}</h3><p>${g.desc}</p><div class="card-footer"><small>${g.online?'♧ 2 người · Một mã phòng':'✧ Đang phát triển'}</small><button data-pick="${g.id}" ${g.online?'':'disabled'}>${g.online?'Chơi ngay →':'Chưa mở'}</button></div></div></article>`;}
 function renderCards(filter='all'){
- $('home-cards').innerHTML=games.filter(g=>g.ready).slice(0,3).map(cardHTML).join('');
- $('library-cards').innerHTML=games.filter(g=>filter==='all'||(filter==='ready'&&g.ready)||g.group===filter).map(cardHTML).join('');
+ $('featured-games').innerHTML=GAME_DATA.filter(g=>g.online).map(gameCard).join('');
+ $('all-games').innerHTML=GAME_DATA.filter(g=>filter==='all'||(filter==='online'&&g.online)||(filter==='soon'&&!g.online)).map(gameCard).join('');
 }
 renderCards();
-document.addEventListener('click',e=>{const b=e.target.closest('[data-open-game]');if(b){if(b.dataset.openGame==='game'){nav('game');$('tutorial').showModal&&(!localStorage.getItem('sd-tutorial')?$('tutorial').showModal():null);}else nav(b.dataset.openGame);}});
-qsa('[data-filter]').forEach(b=>b.onclick=()=>{qsa('[data-filter]').forEach(c=>c.classList.toggle('active',c===b));renderCards(b.dataset.filter);});
-$('hero-play').onclick=()=>nav('game');$('hero-invite').onclick=()=>nav('lobby');
-qsa('[data-close]').forEach(b=>b.onclick=()=>{const dlg=$(b.dataset.close);dlg.close();localStorage.setItem('sd-tutorial','yes');});
-$('tutorial-btn').onclick=()=>$('tutorial').showModal();
-$('tutorial').addEventListener('click',e=>{if(e.target===$('tutorial')){$('tutorial').close();localStorage.setItem('sd-tutorial','yes');}});
+all('[data-filter]').forEach(b=>b.onclick=()=>{all('[data-filter]').forEach(c=>c.classList.toggle('active',c===b));renderCards(b.dataset.filter);});
+document.addEventListener('click',event=>{
+ const button=event.target.closest('[data-pick]');if(!button)return;
+ const id=button.dataset.pick;
+ if(!GAME_BY_ID[id]?.online)return;
+ if(session.room){if(session.seat===0){selectGame(id);}else toast('Hãy nhờ chủ phòng chọn trò này nhé');view('lobby');}
+ else{view('lobby');toast('Tạo phòng hoặc nhập mã trước, sau đó chọn trò nhé!');}
+});
+$('home-create').onclick=()=>{if(session.room){view('lobby');return;}createRoom();};
 
-const pits=new Map();const positions=[[0,'Dân 1'],[1,'Dân 2'],[2,'Dân 3'],[3,'Dân 4'],[4,'Dân 5'],[5,'Quan phải'],[6,'Dân 6'],[7,'Dân 7'],[8,'Dân 8'],[9,'Dân 9'],[10,'Dân 10'],[11,'Quan trái']];
-function makePit(index){
- const btn=document.createElement('button');btn.className='pit'+([5,11].includes(index)?' quan':'');btn.type='button';btn.dataset.pit=index;btn.setAttribute('aria-label',`${positions[index][1]}`);
- btn.innerHTML='<span class="stones" aria-hidden="true"></span><span class="pit-count"></span><span class="pit-tag"></span><span class="pit-tooltip" aria-hidden="true"></span>';
- pits.set(index,btn);return btn;
-}
-[10,9,8,7,6].forEach(i=>$('top-row').append(makePit(i)));
-[0,1,2,3,4].forEach(i=>$('bottom-row').append(makePit(i)));
-$('left-quan').append(makePit(11));$('right-quan').append(makePit(5));
-const positionSet=[[30,35],[60,42],[45,65],[65,67],[26,67],[48,45],[49,35],[79,56],[30,49],[69,27],[45,18]];
-function drawPit(i){
- const btn=pits.get(i),c=game.visual.cells[i];if(!btn||!c)return;
- const quan=[5,11].includes(i),total=c.n+c.q,shown=Math.min(c.n,quan?6:8);
- btn.setAttribute('aria-label',`${quan?'Ô Quan':'Ô Dân'} ${i+1}: ${c.n} quân dân${c.q?' và '+c.q+' quân quan':''}`);
- btn.classList.toggle('selected',game.selected===i);
- btn.classList.toggle('selectable',canSelect(i));
- const stones=qs('.stones',btn);stones.replaceChildren();
- for(let k=0;k<shown;k++){
-  const o=document.createElement('i');o.className='stone c'+(1+(i+k*3)%4);
-  const [x,y]=positionSet[(k+i*2)%positionSet.length];o.style.left=x+'%';o.style.top=y+'%';o.style.setProperty('--rot',((i*39+k*47)%150-70)+'deg');stones.append(o);
- }
- if(c.q){const o=document.createElement('i');o.className='stone mandarin';o.style.left='50%';o.style.top='50%';stones.append(o);}
- qs('.pit-count',btn).textContent=quan?(c.q?c.q+' Quan':(c.n||'0')):String(c.n);
- qs('.pit-tag',btn).textContent=quan?'QUAN':i<5?'DÂN':'DÂN';
- qs('.pit-tooltip',btn).textContent=`${quan?'Ô Quan':'Ô Dân'} · ${c.n} sỏi${c.q?' · '+c.q+' Quan':''}`;
-}
-function canSelect(i){return !game.busy && game.live && game.seat===game.state.turn && game.connected.every(Boolean) && game.state.status==='playing' && (game.seat===0?i>=0&&i<=4:i>=6&&i<=10) && game.state.cells[i].n>0;}
-function drawBoard(){for(let i=0;i<12;i++)drawPit(i);if(game.graphics)game.graphics.setState(game.visual.cells,game.selected,game.seat,canSelect);}
-function selectPit(i){
- if(!canSelect(i)){if(game.live&&game.state.turn!==game.seat)toast('Đang chờ đối thủ đi quân');else if(!game.live)toast('Hãy tạo phòng hoặc chơi với máy trước nhé');else toast('Hãy chọn ô Dân còn quân thuộc phía bạn');return;}
- game.selected=game.selected===i?null:i;updateControls();drawBoard();if(game.selected!==null)ding();
-}
-$('board').addEventListener('click',e=>{const b=e.target.closest('[data-pit]');if(b)selectPit(+b.dataset.pit);});
-function updateControls(){
- const active=game.selected!==null && canSelect(game.selected);$('go-left').disabled=$('go-right').disabled=!active;
- $('selection-title').textContent=game.selected===null?'Chọn một ô Dân':`Ô Dân ${game.selected<5?game.selected+1:game.selected-5}`;
- $('selection-desc').textContent=game.selected===null?'Chạm ô sáng bên mình rồi chọn hướng để bắt đầu rải quân.':'Chọn một trong hai hướng rải. Quân sẽ được thả lần lượt lên bàn.';
- $('selected-display').textContent=game.selected===null?'—':game.state.cells[game.selected].n+' viên';
- $('selected-meta').textContent=game.selected===null?'Chưa chọn ô':'Sẵn sàng rải quân';
-}
-function updateGameUI(){
- $('score-bottom').textContent=String(game.state.score[0]-game.state.borrow[0]).padStart(2,'0');
- $('score-top').textContent=String(game.state.score[1]-game.state.borrow[1]).padStart(2,'0');
- $('player1-name').textContent=game.solo?'Bạn':game.seat===0?'Bạn':'Người chơi 1';
- $('player2-name').textContent=game.solo?'Máy chơi':game.seat===1?'Bạn':'Người chơi 2';
- $('player-bottom').style.opacity=game.state.turn===0?'1':'.75';$('player-top').style.opacity=game.state.turn===1?'1':'.75';
- let status='Tạo phòng hoặc tập chơi với máy để bắt đầu.';
- if(game.live){
-  status=game.state.status==='finished'?(game.state.winner==='draw'?'Hai bên hòa nhau!':`Người chơi ${game.state.winner+1} thắng cuộc!`):!game.connected.every(Boolean)?'Đang đợi người bạn vào phòng…':game.state.turn===game.seat?'Đến lượt bạn! Hãy chọn một ô Dân sáng lên.':game.solo?'Máy đang nghĩ nước đi…':'Đến lượt đối thủ. Bạn chờ chút nhé!';
- }
- if(game.busy)status='Từng viên sỏi đang được rải trên bàn…';
- $('game-status').textContent=status;
- $('connection').textContent=game.live?(game.connected.every(Boolean)?'● ĐÃ SẴN SÀNG':'● ĐANG CHỜ'):'● CHƯA VÀO PHÒNG';
- $('room-caption').textContent=game.live?(game.solo?'Luyện tập với máy':'Phòng '+game.room):'Chưa có phòng chơi';
- $('room-detail').textContent=game.live?(game.solo?'Bạn có thể luyện tập ngay.':'Gửi mã phòng hoặc sao chép liên kết mời cho người bạn muốn chơi cùng.'):'Chơi với máy hoặc tạo phòng riêng.';
- $('room-code-row').hidden=!game.live||game.solo;$('room-code').textContent=game.room||'------';
- $('in-game-create').hidden=$('in-game-solo').hidden=game.live;
- $('leave-room').hidden=!game.live;
- $('play-again').hidden=!game.live||game.state.status!=='finished';
- $('play-again').textContent=game.rematch[game.seat]?'Đã sẵn sàng · chờ bạn':'↻ Chơi ván mới';
- $('board-subtitle').textContent=game.live?game.solo?'Chế độ tập với máy · không cần chờ ai':'Mã phòng: '+game.room+' · chia sẻ để chơi cùng nhau':'Chọn một ô để xem số quân. Đăng nhập không bắt buộc.';
- updateControls();drawBoard();
-}
-function move(dir){if(game.selected===null||!canSelect(game.selected))return;const pit=game.selected;game.selected=null;game.busy=true;game.state.turn=game.state.turn;wsSend({type:'move',pit,dir,seq:game.state.seq});updateGameUI();}
-$('go-left').onclick=()=>move(-1);$('go-right').onclick=()=>move(1);$('cancel-selection').onclick=()=>{game.selected=null;updateGameUI();};
-window.addEventListener('keydown',e=>{if(!qs('.page[data-page="game"]').classList.contains('active')||e.target.matches('input,textarea'))return;if(e.key==='ArrowLeft'){e.preventDefault();move(-1);}else if(e.key==='ArrowRight'){e.preventDefault();move(1);}else if(e.key==='Escape'){game.selected=null;updateGameUI();}});
-function wsSend(obj){if(game.socket?.readyState===WebSocket.OPEN)game.socket.send(JSON.stringify(obj));}
-const sessionSave=()=>{if(game.room&&game.token)localStorage.setItem(STORE,JSON.stringify({room:game.room,token:game.token}));};
-function startConnection(intent, auto=false){
- if(game.socket?.readyState===WebSocket.OPEN||game.socket?.readyState===WebSocket.CONNECTING){wsSend(intent);return;}
- game.intentional=false;
- const ws=new WebSocket((location.protocol==='https:'?'wss://':'ws://')+location.host);game.socket=ws;
- ws.onopen=()=>{clearTimeout(game.reconnectTimer);wsSend(intent);};
- ws.onmessage=e=>{
-  let msg;try{msg=JSON.parse(e.data);}catch{return;}
-  if(msg.type==='error'){
-    toast(msg.message);game.busy=false;
-    if(auto||msg.message.includes('Phòng không tồn tại')||msg.message.includes('Phiên không hợp lệ')){localStorage.removeItem(STORE);game.room='';game.token='';game.live=false;game.seat=null;game.intentional=true;ws.close();nav('lobby');}
-    updateGameUI();return;
+function send(payload){const ws=session.socket;if(ws?.readyState===WebSocket.OPEN){ws.send(JSON.stringify(payload));return true;}toast('Chưa kết nối máy chủ. Vui lòng đợi một chút.');return false;}
+function storeSession(){if(session.room&&session.token)localStorage.setItem(SESSION_KEY,JSON.stringify({room:session.room,token:session.token}));}
+function connect(intent,automatic=false){
+ if(session.socket?.readyState===WebSocket.OPEN){send(intent);return;}
+ if(session.socket?.readyState===WebSocket.CONNECTING)return;
+ session.intentional=false;
+ const socket=new WebSocket((location.protocol==='https:'?'wss://':'ws://')+location.host);
+ session.socket=socket;
+ socket.onopen=()=>{clearTimeout(session.retry);socket.send(JSON.stringify(intent));};
+ socket.onmessage=e=>{
+  let m;try{m=JSON.parse(e.data);}catch{return;}
+  if(m.type==='error'){
+   toast(m.message);session.busy=false;
+   if(automatic||m.message.includes('Phòng không tồn tại')||m.message.includes('Phiên kết nối không hợp lệ')){forgetRoom();session.intentional=true;socket.close();view('lobby');}
+   else renderPlay();return;
   }
-  if(msg.type==='left')return;
-  if(msg.type==='animation'){
-    if(msg.seq>game.visual.seq)game.animationEvents.set(msg.seq,msg.events);
-    return;
+  if(m.type==='left')return;
+  if(m.type==='reaction'){showReaction(m.emoji,m.seat);return;}
+  if(m.type==='animation'){
+   if(m.gameId==='quan')session.events.set(m.gameId+':'+m.seq,m.events);
+   return;
   }
-  if(msg.type==='state')queueServerState(msg);
+  if(m.type==='state')queueState(m);
  };
- ws.onclose=()=>{
-   if(ws!==game.socket)return;
-   game.connected=[false,false];game.busy=false;updateGameUI();
-   if(!game.intentional&&game.token&&game.room){
-    $('connection').textContent='● MẤT KẾT NỐI · ĐANG THỬ LẠI';
-    clearTimeout(game.reconnectTimer);
-    game.reconnectTimer=setTimeout(()=>startConnection({type:'resume',code:game.room,token:game.token},true),2400);
-   }else if(!game.intentional)toast('Không kết nối được máy chủ. Vui lòng kiểm tra mạng.');
+ socket.onclose=()=>{
+  if(socket!==session.socket)return;
+  session.connected=[false,false];session.busy=false;renderLobby();renderPlay();
+  if(!session.intentional&&session.room&&session.token){
+   toast('Mất kết nối, đang nối lại phòng…');clearTimeout(session.retry);
+   session.retry=setTimeout(()=>connect({type:'resume',code:session.room,token:session.token},true),2100);
+  }else if(!session.intentional)toast('Không kết nối được máy chủ. Hãy kiểm tra mạng rồi thử lại.');
  };
- ws.onerror=()=>{};
+ socket.onerror=()=>{};
 }
-let animationId=0;
-let playback=false;
-const pendingStates=[];
-async function queueServerState(msg){
- pendingStates.push(msg);
- if(playback)return;
- playback=true;
- try{while(pendingStates.length){await applyServerState(pendingStates.shift());}}
- finally{playback=false;}
-}
-function updateAchievements(s){
- if(s.status==='finished'){
-  const key=`finished:${game.room}:${s.seq}`;
-  if(!sessionStorage.getItem(key)){
-   sessionStorage.setItem(key,'1');profile.matches++;
-   if(s.winner===game.seat)profile.wins++;
-   saveProfile();
-  }
- }
-}
-async function applyServerState(msg){
- const prev=game.visual;
- const fresh=msg.state;
- game.state=fresh;game.live=true;game.room=msg.room;game.token=msg.token;game.seat=msg.seat;game.solo=!!msg.solo;game.connected=msg.connected;game.rematch=msg.rematch||[false,false];sessionSave();updateAchievements(fresh);
- const events=game.animationEvents.get(fresh.seq);
- const animation=events&&prev.seq!==fresh.seq?{seq:fresh.seq,events}:null;
- game.animationEvents.delete(fresh.seq);game.selected=null;
- if(animation){
-   const id=++animationId;game.busy=true;updateGameUI();
-   await animateMove(animation.events,prev,fresh,id);
-   if(animationId!==id)return;
- }
- game.visual=clone(fresh);game.busy=false;updateGameUI();
- if(fresh.status==='finished')toast(fresh.winner==='draw'?'Hòa rồi! Một ván nữa chứ?':`Ván đấu kết thúc · ${fresh.winner===game.seat?'Bạn thắng!':'Thử sức lần nữa nhé!'}`);
-}
-function stonePosition(i){const el=pits.get(i),rect=el?.getBoundingClientRect(),outer=$('board-wrap').getBoundingClientRect();return rect?{x:rect.left-outer.left+rect.width/2,y:rect.top-outer.top+rect.height/2}:null;}
-function popParticle(from,to,ms=105){
- if(!qs('.page[data-page="game"]').classList.contains('active')||game.graphic3d)return Promise.resolve();
- const a=stonePosition(from),b=stonePosition(to);if(!a||!b)return Promise.resolve();
- const o=document.createElement('span');o.className='flying-stone';o.style.left=a.x+'px';o.style.top=a.y+'px';$('flying-stones').append(o);
- const dx=b.x-a.x,dy=b.y-a.y;
- const anim=o.animate([{transform:'translate(-50%,-50%) translate(0,0) scale(1)',opacity:.9},{transform:`translate(-50%,-50%) translate(${dx*.5}px,${dy*.5-32}px) scale(1.28)`,opacity:1,offset:.52},{transform:`translate(-50%,-50%) translate(${dx}px,${dy}px) scale(.9)`,opacity:1}],{duration:ms,easing:'cubic-bezier(.3,.1,.3,1)'});
- return anim.finished.catch(()=>{}).then(()=>o.remove());
-}
-const pause=ms=>new Promise(r=>setTimeout(r,ms));
-async function animateMove(events,previous,final,id){
- game.visual=clone(previous);
- const reduce=matchMedia('(prefers-reduced-motion: reduce)').matches;
- const drops=events.filter(e=>e.type==='drop').length;
- const duration=reduce?0:(drops>60?58:drops>35?78:119);
- for(const e of events){
-  if(id!==animationId)return;
-  if(e.type==='pickup'){game.visual.cells[e.pit].n=0;drawPit(e.pit);if(!reduce)await pause(50);}
-  else if(e.type==='drop'){await popParticle(e.from,e.pit,duration);game.visual.cells[e.pit].n++;drawPit(e.pit);ding();}
-  else if(e.type==='capture'){
-    if(!reduce)await pause(90);
-    game.visual.cells[e.pit].n=0;game.visual.cells[e.pit].q=0;drawPit(e.pit);ding('capture');toast(`✦ Ăn được ${e.value} điểm!`);
-  }else if(e.type==='refill'){game.visual.cells[e.pit].n++;drawPit(e.pit);}
-  if(game.graphics)game.graphics.setState(game.visual.cells,game.selected,game.seat,canSelect);
- }
- game.visual=clone(final);
-}
-function requestRoom(solo=false){
- if(game.live){toast('Bạn đang ở trong một phòng. Hãy rời phòng trước khi tạo phòng khác.');nav('game');return;}
- nav('game');$('game-status').textContent='Đang tạo phòng…';startConnection({type:'create',solo});
-}
+function forgetRoom(){session.room='';session.token='';session.seat=null;session.gameId=null;session.match=null;session.visual=null;session.connected=[false,false];session.rematch=[false,false];session.busy=false;session.selected=null;session.events.clear();session.pending.length=0;session.history=[];session.solo=false;animGeneration++;localStorage.removeItem(SESSION_KEY);}
+function createRoom(){if(session.room){view('lobby');return;}view('lobby');connect({type:'create',name:nickname});}
 function joinRoom(code){
  code=String(code||'').trim().toUpperCase();
- if(!/^[A-Z0-9]{6}$/.test(code)){toast('Mã phòng cần đủ 6 ký tự.');return;}
- if(game.live&&game.room===code){nav('game');return;}
- if(game.live){toast('Hãy rời phòng cũ trước khi tham gia phòng mới.');return;}
- nav('game');startConnection({type:'join',code});
+ if(!/^[A-F0-9]{6}$/.test(code)){toast('Mã phòng gồm 6 ký tự chữ/số');return;}
+ if(session.room){if(session.room===code){view('lobby');return;}toast('Bạn cần rời phòng hiện tại trước khi vào phòng khác');return;}
+ view('lobby');connect({type:'join',code,name:nickname});
 }
-$('make-room').onclick=$('in-game-create').onclick=()=>requestRoom(false);
-$('solo-start').onclick=$('in-game-solo').onclick=()=>requestRoom(true);
-$('join-room').onclick=()=>joinRoom($('room-input').value);
-$('room-input').addEventListener('keydown',e=>{if(e.key==='Enter')joinRoom(e.target.value);});
-$('copy-link').onclick=async()=>{const link=`${location.origin}/?room=${encodeURIComponent(game.room)}#game`;try{await navigator.clipboard.writeText(link);toast('Đã sao chép liên kết mời!');}catch{toast('Mã phòng: '+game.room);}};
-$('play-again').onclick=()=>wsSend({type:'rematch'});
+$('create-room').onclick=createRoom;
+$('solo-create').onclick=()=>{if(session.room){toast('Hãy rời phòng cũ trước nhé');return;}view('lobby');connect({type:'create',solo:true,name:nickname});};
+$('join-room').onclick=() => joinRoom($('join-code').value);
+$('join-code').addEventListener('keydown',e=>{if(e.key==='Enter')joinRoom($('join-code').value);});
 $('leave-room').onclick=()=>{
- if(!confirm('Bạn muốn rời phòng hiện tại? Trận chơi sẽ không được giữ lại.'))return;
- wsSend({type:'leave'});game.intentional=true;clearTimeout(game.reconnectTimer);
- game.socket?.close();game.socket=null;localStorage.removeItem(STORE);animationId++;
- pendingStates.length=0;game.animationEvents.clear();game.room='';game.token='';game.live=false;game.solo=false;game.seat=null;game.state=initial();game.visual=initial();game.busy=false;game.selected=null;game.connected=[false,false];updateGameUI();nav('lobby');toast('Bạn đã rời phòng.');
+ if(!confirm('Bạn muốn rời phòng? Nếu có bạn đang chơi cùng, họ sẽ thấy bạn đã rời.'))return;
+ send({type:'leave'});session.intentional=true;session.socket?.close();session.socket=null;forgetRoom();view('lobby');toast('Đã rời phòng.');
 };
-
-// Optional adaptive 3D renderer, dynamically imported only when requested.
-$('graphics-btn').onclick=async()=>{
- if(game.graphic3d){game.graphic3d=false;$('three-viewport').hidden=true;$('board-wrap').classList.remove('in-3d');$('graphics-btn').textContent='◈ Xem 3D';$('fps-badge').textContent='MƯỢT · 2.5D';$('reset-view').hidden=true;game.graphics?.stop();return;}
- $('graphics-btn').disabled=true;$('graphics-btn').textContent='Đang mở 3D…';
- try{
-   if(!game.graphics){const mod=await import('/three-mode.js');game.graphics=await mod.makeThreeView($('three-viewport'),selectPit);}
-   game.graphic3d=true;$('three-viewport').hidden=false;$('board-wrap').classList.add('in-3d');game.graphics.setState(game.visual.cells,game.selected,game.seat,canSelect);game.graphics.start();game.graphics.resize();$('graphics-btn').textContent='▦ Xem nhẹ';$('fps-badge').textContent='TƯƠNG TÁC · 3D';$('reset-view').hidden=false;
- }catch(e){console.error(e);toast('Không tải được chế độ 3D. Bạn vẫn có thể chơi mượt ở chế độ mặc định.');$('graphics-btn').textContent='◈ Xem 3D';}
- $('graphics-btn').disabled=false;
-};
-$('reset-view').onclick=()=>game.graphics?.reset();
-
-function updateProfile(){
- $('profile-name').textContent=profile.name;$('stat-matches').textContent=profile.matches;$('stat-wins').textContent=profile.wins;$('stat-rps').textContent=profile.rps;
+function selectGame(id){if(!session.room){view('lobby');return;}if(session.seat!==0){toast('Chủ phòng sẽ chọn trò cho cả hai nhé');return;}
+ if(session.gameId===id){view('play');return;}
+ if(session.gameId&&session.match?.status==='playing'&&!confirm('Chọn trò khác sẽ bắt đầu một ván mới. Tiếp tục?'))return;
+ send({type:'select_game',gameId:id});
 }
-$('edit-name').onclick=()=>{const name=prompt('Bạn muốn được gọi là gì? (tối đa 22 ký tự)',profile.name);if(name===null)return;const clean=name.trim().slice(0,22);if(clean){profile.name=clean;saveProfile();toast('Đã đổi tên trên thiết bị này!');}};updateProfile();
-const hands=['✊','✋','✌️'];let rpsScore=[0,0],rpsBusy=false;
-qsa('[data-rps]').forEach(b=>b.onclick=async()=>{
- if(rpsBusy)return;rpsBusy=true;const me=Number(b.dataset.rps),bot=Math.floor(Math.random()*3);
- $('rps-message').textContent='Oẳn tù tì…';for(let j=0;j<4;j++){$('rps-hand-me').textContent=hands[j%3];$('rps-hand-ai').textContent=hands[j%3];await pause(95);} $('rps-hand-me').textContent=hands[me];$('rps-hand-ai').textContent=hands[bot];
- const result=(me-bot+3)%3;if(result===1){rpsScore[0]++;$('rps-message').textContent='Bạn thắng rồi! ✦';ding('capture');}else if(result===2){rpsScore[1]++;$('rps-message').textContent='Máy thắng lượt này!';}else $('rps-message').textContent='Hòa! Chơi lại nào!';
- $('rps-me').textContent=rpsScore[0];$('rps-ai').textContent=rpsScore[1];profile.rps++;saveProfile();rpsBusy=false;
-});
-$('rps-reset').onclick=()=>{rpsScore=[0,0];$('rps-me').textContent='0';$('rps-ai').textContent='0';$('rps-message').textContent='Bạn chọn trước nhé!';$('rps-hand-me').textContent='✊';$('rps-hand-ai').textContent='✊';};
-let caro=Array(100).fill(''),caroTurn='X',caroDone=false;
-function drawCaro(win=[]){$('caro-grid').innerHTML='';caro.forEach((piece,i)=>{const b=document.createElement('button');b.type='button';b.textContent=piece;b.className=(piece==='O'?'o ':'')+(win.includes(i)?'win':'');b.disabled=!!piece||caroDone;b.setAttribute('aria-label',`Hàng ${Math.floor(i/10)+1} cột ${i%10+1}${piece?' '+piece:''}`);b.onclick=()=>playCaro(i);$('caro-grid').append(b);});}
-function findCaroWin(idx){const x=idx%10,y=Math.floor(idx/10),piece=caro[idx];for(const [dx,dy] of [[1,0],[0,1],[1,1],[1,-1]]){const line=[idx];for(const sign of [-1,1])for(let s=1;s<5;s++){const xx=x+sign*s*dx,yy=y+sign*s*dy;if(xx<0||xx>=10||yy<0||yy>=10||caro[yy*10+xx]!==piece)break;line.push(yy*10+xx);}if(line.length>=5)return line;}return null;}
-function playCaro(idx){if(caro[idx]||caroDone)return;caro[idx]=caroTurn;ding();const win=findCaroWin(idx);if(win){caroDone=true;$('caro-status').textContent=caroTurn+' thắng rồi! ✦';toast('Năm dấu liên tiếp!');}else if(caro.every(Boolean)){caroDone=true;$('caro-status').textContent='Hòa rồi!';}else{caroTurn=caroTurn==='X'?'O':'X';$('caro-status').textContent='Đến lượt '+caroTurn;}drawCaro(win||[]);}
-$('caro-reset').onclick=()=>{caro=Array(100).fill('');caroTurn='X';caroDone=false;$('caro-status').textContent='Đến lượt X';drawCaro();};drawCaro();
+$('back-to-lobby').onclick=()=>{view('lobby');};
+$('play-history').onclick=()=>view('lobby');
+async function copyInvite(){if(session.solo){toast('Đây là phòng luyện tập với máy, không thể mời thêm người');return;}const url=`${location.origin}/?room=${encodeURIComponent(session.room)}#lobby`;try{await navigator.clipboard.writeText(url);toast('Đã sao chép link mời!');}catch{toast('Mã phòng: '+session.room);}}
+$('share-room').onclick=$('play-copy-link').onclick=copyInvite;
+$('header-room').onclick=()=>view('lobby');
+function renderHistory(){
+ const host=$('room-history');if(!host)return;
+ if(!session.history.length){host.innerHTML='<p class="history-empty">Chưa có ván nào được ghi lại trong phòng này. Hoàn thành một ván để lưu kỷ niệm nhé.</p>';return;}
+ host.replaceChildren(...session.history.map(h=>{
+ const item=document.createElement('article');item.className='history-row';
+ const icon=document.createElement('span');icon.className='history-icon';icon.textContent=GAME_BY_ID[h.gameId]?.emoji||'🏮';
+ const desc=document.createElement('div');const title=document.createElement('b');title.textContent=h.gameName;
+ const detail=document.createElement('small');detail.textContent=new Date(h.at).toLocaleString('vi-VN')+' · '+(h.reason==='finished'?(h.winner==='draw'?'Hòa':h.winner===null?'Kết thúc':'Thắng: '+(h.players[h.winner]||'Người chơi')):'Đã đổi trò / rời phòng')+' · '+h.turns+' lượt';
+ desc.append(title,detail);const score=document.createElement('strong');score.textContent=h.score?h.score.join(' : '):'✦';item.append(icon,desc,score);return item;
+ }));
+}
+$('history-export').onclick=()=>{
+ if(!session.history.length){toast('Chưa có lịch sử để xuất');return;}
+ const blob=new Blob([JSON.stringify({room:session.room,history:session.history},null,2)],{type:'application/json'});
+ const url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download='lich-su-san-dinh-'+session.room+'.json';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);
+};
+function renderLobby(){
+ const online=!!session.room;
+ $('lobby-entry').hidden=online;$('lobby-connected').hidden=!online;$('header-room').hidden=!online;
+ if(!online)return;
+ $('header-room').textContent='♧ '+session.room;
+ setText('hub-room-code',session.room);setText('hub-presence',session.connected.every(Boolean)?(session.solo?'🤖 Bạn đang luyện tập cùng máy':'✦ Hai người đã vào sân · Sẵn sàng chơi'):'○ Đang chờ người còn lại vào phòng…');
+ for(let i=0;i<2;i++){
+  const el=$('member-'+i);el.classList.toggle('ready',!!session.connected[i]);
+  one('b',el).textContent=session.players[i]?.name||`Người chơi ${i+1}`;
+  one('span:not(.member-avatar)',el).textContent=session.connected[i]?'● Đã vào sân':'○ Đang chờ kết nối';
+ }
+ $('host-hint').textContent=session.seat===0?'Bạn là chủ phòng • hãy chọn trò':'Đang chờ chủ phòng chọn trò';
+ renderHistory();
+ $('room-game-picker').innerHTML=GAME_DATA.filter(g=>g.online).map(g=>`<button class="room-pick" data-room-game="${g.id}" ${session.seat===0?'':'disabled'}><span class="icon">${g.emoji}</span><span><b>${g.name}</b><small>${session.gameId===g.id?'● ĐANG CHƠI':'Hai người cùng chơi'}</small></span></button>`).join('');
+}
+$('room-game-picker').addEventListener('click',e=>{const btn=e.target.closest('[data-room-game]');if(btn)selectGame(btn.dataset.roomGame);});
 
-const urlCode=new URLSearchParams(location.search).get('room');let stored;
-try{stored=JSON.parse(localStorage.getItem(STORE)||'null');}catch{}
-if(urlCode&&/^[a-z0-9]{6}$/i.test(urlCode)){
- const code=urlCode.toUpperCase();if(stored?.room===code){game.room=stored.room;game.token=stored.token;nav('game');startConnection({type:'resume',code:stored.room,token:stored.token},true);}else{joinRoom(code);}
-}else if(stored?.room&&stored.token){game.room=stored.room;game.token=stored.token;nav('game');startConnection({type:'resume',code:stored.room,token:stored.token},true);}
-else if(location.hash){nav(location.hash.slice(1));}
-updateGameUI();
-if('serviceWorker'in navigator&&location.protocol!=='file:')window.addEventListener('load',()=>navigator.serviceWorker.register('/sw.js').catch(()=>{}));
+async function queueState(m){
+ session.pending.push(m);
+ if(session.playback)return;
+ session.playback=true;
+ try{while(session.pending.length)await applyState(session.pending.shift());}
+ finally{session.playback=false;}
+}
+async function applyState(m){
+ const oldId=session.gameId,previous=session.visual;
+ session.room=m.room;session.token=m.token;session.seat=m.seat;session.connected=m.connected;session.players=m.players;session.rematch=m.rematch;session.gameId=m.gameId;session.match=m.state;session.history=m.history||[];session.solo=!!m.solo;storeSession();
+ const switched=oldId!==m.gameId;
+ if(switched){animGeneration++;session.selected=null;session.busy=false;session.visual=null;session.events.clear();exit3d();}
+ if(!m.gameId){session.visual=null;session.selected=null;renderLobby();view('lobby');return;}
+ if(switched || (currentView!=='play' && !session.busy))view('play');
+ if(!m.state){renderPlay();return;}
+ const events=session.events.get(m.gameId+':'+m.state.seq);session.events.delete(m.gameId+':'+m.state.seq);
+ if(m.gameId==='quan' && previous && previous.seq!==m.state.seq && events && !switched){
+  const generation=++animGeneration;session.busy=true;session.selected=null;
+  session.visual=copy(previous);renderPlay();
+  await animateQuan(events,generation);
+  if(generation!==animGeneration)return;
+ }
+ session.visual=copy(m.state);session.busy=false;
+ if(session.selected!==null&&!canMakeMove())session.selected=null;
+ renderLobby();renderPlay();
+ if(previous && previous.seq!==m.state.seq && !switched && m.gameId!=='quan')animateOtherGame(m.gameId,m.state);
+ if(m.state.status==='finished' && (switched || !previous || previous.status!=='finished')){
+  beep(840,.042,.27);toast(m.state.winner==='draw'?'Hai bạn hòa nhau!':m.state.winner===session.seat?'✦ Bạn thắng rồi!':'Đối thủ đã giành chiến thắng.');
+ }
+}
+function animateOtherGame(gameId,state){
+ if(reduceMotion()||currentView!=='play')return;
+ const root=$('play-surface');
+ if(gameId==='caro'){
+  const target=root.querySelectorAll('.caro-cell')[state.last];
+  target?.animate([{transform:'scale(.4) rotate(-12deg)',opacity:.4},{transform:'scale(1.18)',opacity:1},{transform:'scale(1)'}],{duration:340,easing:'ease-out'});beep(640,.026,.14);
+ }
+ if(gameId==='ganh'){
+  const target=root.querySelectorAll('[data-ganh]')[state.last?.to]||root.querySelector('.last');
+  target?.animate([{filter:'brightness(2)',transform:'scale(.65)'},{filter:'brightness(1.3)',transform:'scale(1.18)'},{filter:'brightness(1)',transform:'scale(1)'}],{duration:430,easing:'ease-out'});beep(410,.026,.18);
+ }
+ if(gameId==='rps'){
+  all('.rps-hands span',root).forEach((el,i)=>el.animate([{transform:'translateY(18px) rotate(-13deg)',opacity:.3},{transform:'translateY(-12px) rotate(10deg)',opacity:1},{transform:'translateY(0) rotate(0)'}],{duration:490+i*70,easing:'cubic-bezier(.2,.7,.2,1)'}));
+ }
+}
+function canMakeMove(){return !!session.match&&session.match.status==='playing'&&session.connected.every(Boolean)&&!session.busy&&session.seat===session.match.turn;}
+function move(payload){if(!session.gameId||!session.match)return;if(!session.connected.every(Boolean)){toast('Đợi bạn cùng chơi kết nối lại nhé');return;}if(session.busy)return;
+ if(send({type:'move',seq:session.match.seq,...payload})){session.busy=true;renderPlay();}
+}
+function playerScore(seat){
+ if(!session.match)return '—';
+ if(session.gameId==='quan')return (session.match.score[seat]-session.match.borrow[seat])+' điểm';
+ if(session.gameId==='rps')return session.match.scores[seat]+' / 3';
+ if(session.gameId==='ganh')return session.match.cells.filter(x=>x===seat).length+' quân';
+ if(session.gameId==='caro')return seat===0?'X':'O';
+ return '—';
+}
+function updateBanner(){
+ const state=session.match,el=$('turn-banner');el.className='turn-banner idle';
+ if(!state){setText('turn-title','Đang chờ chọn trò');setText('turn-description','Trở về phòng để chọn một trò nhé');return;}
+ let title='',desc='',style='idle';
+ if(!session.connected.every(Boolean)){title='ĐANG CHỜ BẠN CÙNG CHƠI';desc='Trận tạm dừng để chờ hai người kết nối.';}
+ else if(state.status==='finished'){
+  title=state.winner==='draw'?'HAI BẠN HÒA NHAU!':state.winner===session.seat?'✦ BẠN ĐÃ CHIẾN THẮNG!':'VÁN ĐẤU KẾT THÚC';
+  desc='Chọn chơi lại hoặc trở về phòng để đổi trò.';style='finished';
+ }else if(session.busy){title='ĐANG CHUYỂN QUÂN…';desc='Hãy chờ hoạt ảnh hoàn tất để tiếp tục.';}
+ else if(session.gameId==='rps'){
+  if(state.yourChoice!==null){title='ĐÃ KHÓA LỰA CHỌN ✓';desc='Chờ đối thủ chọn tay, sau đó hai bên cùng lật.';style='theirs';}
+  else{title='✦ ĐẾN LƯỢT BẠN CHỌN TAY!';desc='Búa, Bao hay Kéo? Đối thủ không thấy lựa chọn trước khi lật.';style='mine';}
+ }else if(state.turn===session.seat){title='✦ ĐẾN LƯỢT BẠN!';desc= session.gameId==='quan'?'Các ô quân của bạn đang phát sáng — chạm một ô để rải.':session.gameId==='ganh'?'Chọn quân sáng rồi chọn điểm đến.':'Chạm vào một ô trống để đánh dấu.';style='mine';}
+ else{title='ĐỐI THỦ ĐANG ĐI QUÂN';desc='Chờ một chút nhé, chuẩn bị nước đi tiếp theo!';style='theirs';}
+ el.classList.add(style);setText('turn-title',title);setText('turn-description',desc);setText('turn-symbol',style==='mine'?'✦':style==='theirs'?'◷':style==='finished'?'🏆':'◈');
+}
+function renderPlay(){
+ if(currentView!=='play'||!session.gameId||!session.match)return;
+ const gd=GAME_BY_ID[session.gameId];
+ setText('active-game-name',gd.name);setText('game-category','MỘT MÃ PHÒNG · NHIỀU TRÒ CÙNG CHƠI');setText('play-room-code',session.room);
+ const mine=session.seat,opp=1-mine;
+ $('my-card').classList.toggle('active',session.match.status==='playing'&&session.match.turn===mine&&session.connected.every(Boolean));
+ $('opponent-card').classList.toggle('active',session.match.status==='playing'&&session.match.turn===opp&&session.connected.every(Boolean));
+ setText('my-name',session.players[mine]?.name||'Bạn');setText('opponent-name',session.players[opp]?.name||'Bạn cùng chơi');
+ setText('my-score',playerScore(mine));setText('opponent-score',playerScore(opp));
+ one('.player-icon',$('my-card')).textContent=mine===0?'01':'02';one('.player-icon',$('opponent-card')).textContent=opp===0?'01':'02';
+ setText('board-hint',session.gameId==='quan'?'↻ Mỗi người nhìn bàn từ phía của mình. Con số trong ô là số quân thực tế.':session.gameId==='ganh'?'Các quân sáng là quân của bạn. Chạm quân rồi chọn giao điểm sáng.':session.gameId==='caro'?'Đánh lần lượt X rồi O · Nối năm dấu để thắng.':'Mỗi người chọn bí mật, cùng lật khi đã chọn xong.');
+ updateBanner();
+ $('three-toggle').hidden=session.gameId!=='quan';
+ if(session.gameId==='quan')renderQuan();
+ else if(session.gameId==='ganh')renderGanh();
+ else if(session.gameId==='caro')renderCaro();
+ else if(session.gameId==='rps')renderRps();
+ renderActions();
+ updateMobileHelpers();
+}
+
+const coords=[[30,35],[60,42],[45,65],[65,67],[26,67],[48,45],[49,35],[79,56],[30,49],[69,27],[45,18]];
+function makePit(idx){const btn=document.createElement('button');btn.className='pit'+([5,11].includes(idx)?' quan-pit':'');btn.type='button';btn.dataset.pit=idx;btn.innerHTML='<span class="pit-core"><span class="stones"></span><span class="pit-num"></span><span class="pit-name"></span></span>';pitNodes.set(idx,btn);return btn;}
+function setupQuan(){
+ pitNodes.clear();const wrapper=document.createElement('div');wrapper.className='oaq-board';wrapper.id='oaq-board';wrapper.innerHTML='<div class="oaq-rows"><div class="pit-row" id="upper-row"></div><div class="pit-row" id="lower-row"></div></div><span class="board-center">✿ TUỔI THƠ ✿</span><div class="stone-flight" id="stone-flight"></div>';
+ $('play-surface').replaceChildren(wrapper);
+ for(const i of [10,9,8,7,6])$('upper-row').append(makePit(i));
+ for(const i of [0,1,2,3,4])$('lower-row').append(makePit(i));
+ const left=makePit(11),right=makePit(5);left.classList.add('left');right.classList.add('right');wrapper.append(left,right);
+ wrapper.addEventListener('click',e=>{const pit=e.target.closest('[data-pit]');if(pit)selectQuan(+pit.dataset.pit);});
+}
+function quanLegal(i){if(!canMakeMove())return false;const own=session.seat===0?i>=0&&i<5:i>=6&&i<11;return own&&session.match.cells[i].n>0;}
+function drawQuanPit(i){
+ const node=pitNodes.get(i),cell=session.visual?.cells[i];if(!node||!cell)return;
+ const valid=quanLegal(i),mandarin=i===5||i===11;
+ node.classList.toggle('legal',!!valid);node.classList.toggle('chosen',session.selected===i);
+ const stones=one('.stones',node);stones.replaceChildren();
+ const visible=Math.min(cell.n,8);
+ for(let k=0;k<visible;k++){
+  const o=document.createElement('i');o.className='stone';const [x,y]=coords[(k+i*3)%coords.length];o.style.left=x+'%';o.style.top=y+'%';o.style.setProperty('--a',((i*29+k*41)%130-65)+'deg');stones.append(o);
+ }
+ if(cell.q){const o=document.createElement('i');o.className='stone';o.style.left='50%';o.style.top='49%';o.style.width='35%';o.style.height='33%';stones.append(o);}
+ one('.pit-num',node).textContent=mandarin?(cell.q?'♛ '+cell.q:String(cell.n)):String(cell.n);
+ one('.pit-name',node).textContent=mandarin?'QUAN':'DÂN';
+ node.setAttribute('aria-label',mandarin?`Ô Quan: ${cell.q} quan, ${cell.n} quân dân`:`Ô Dân có ${cell.n} quân${valid?', có thể chọn':''}`);
+}
+function renderQuan(){
+ if(!session.visual||!Array.isArray(session.visual.cells))session.visual=copy(session.match);
+ if(!pitNodes.size || !one('#oaq-board') && !session.three)setupQuan();
+ const board=$('oaq-board');if(board)board.classList.toggle('rotated',session.seat===1);
+ if(session.three){session.graphics?.setState(session.visual.cells,session.selected,session.seat,quanLegal);return;}
+ for(let i=0;i<12;i++)drawQuanPit(i);
+}
+function selectQuan(idx){
+ if(!canMakeMove()){toast('Chưa đến lượt bạn hoặc đang chờ người cùng chơi.');return;}
+ if(!quanLegal(idx)){toast('Chỉ chọn ô Dân còn sỏi ở phía của bạn');return;}
+ session.selected=session.selected===idx?null:idx;beep();renderPlay();
+}
+function quanMove(dir){if(session.selected===null)return;const pit=session.selected;session.selected=null;move({pit,dir});}
+
+function ganhNeighbors(idx){const r=Math.floor(idx/5),c=idx%5,steps=[[1,0],[-1,0],[0,1],[0,-1]];if((r+c)%2===0)steps.push([1,1],[1,-1],[-1,1],[-1,-1]);return steps.map(([dr,dc])=>[r+dr,c+dc]).filter(([rr,cc])=>rr>=0&&rr<5&&cc>=0&&cc<5).map(([rr,cc])=>rr*5+cc);}
+function renderGanh(){
+ if(!session.visual||!Array.isArray(session.visual.cells))session.visual=copy(session.match);
+ const state=session.visual;const shell=document.createElement('div');shell.className='ganh-shell'+(session.seat===1?' rotated':'');
+ const board=document.createElement('div');board.className='ganh-board';
+ let lines='';for(let i=0;i<25;i++){const r=Math.floor(i/5),c=i%5;for(const j of ganhNeighbors(i).filter(x=>x>i)){const rr=Math.floor(j/5),cc=j%5;lines+=`<line x1="${40+c*80}" y1="${40+r*80}" x2="${40+cc*80}" y2="${40+rr*80}" stroke="#725b41" stroke-width="2.5"/>`;}}
+ board.innerHTML=`<svg class="ganh-lines" viewBox="0 0 400 400" preserveAspectRatio="none" aria-hidden="true">${lines}</svg>`;
+ const targets=session.selected!==null&&canMakeMove()?ganhNeighbors(session.selected).filter(i=>state.cells[i]===null):[];
+ state.cells.forEach((owner,i)=>{
+  const el=document.createElement('button');el.type='button';el.className='ganh-point'+(session.selected===i?' selected':'')+(targets.includes(i)?' can-move':'');el.style.left=(10+i%5*20)+'%';el.style.top=(10+Math.floor(i/5)*20)+'%';
+  const piece=owner===null?'':`<span class="ganh-piece ${owner===session.seat?'':'enemy'}">${owner===0?'✦':'✿'}</span>`;
+  el.innerHTML=piece;el.setAttribute('aria-label',`Hàng ${Math.floor(i/5)+1} cột ${i%5+1}: ${owner===null?'Trống':owner===session.seat?'Quân của bạn':'Quân đối thủ'}`);el.onclick=()=>{
+   if(!canMakeMove()){toast('Chờ đến lượt mình nhé');return;}
+   if(session.selected!==null&&targets.includes(i)){const from=session.selected;session.selected=null;move({from,to:i});return;}
+   if(state.cells[i]===session.seat){session.selected=session.selected===i?null:i;beep();renderPlay();}
+   else toast('Chọn quân của bạn rồi chọn một điểm sáng để đi');
+  };board.append(el);
+ });shell.append(board);$('play-surface').replaceChildren(shell);
+}
+function renderCaro(){
+ const state=session.match;
+ const board=document.createElement('div');board.className='caro-shell';const grid=document.createElement('div');grid.className='caro-grid';
+ state.cells.forEach((piece,idx)=>{
+  const el=document.createElement('button');el.type='button';el.className='caro-cell'+(piece===1?' o':'')+(state.last===idx?' last':'')+(state.winning.includes(idx)?' win':'');
+  el.textContent=piece===0?'X':piece===1?'O':'';
+  el.disabled=piece!==null||!canMakeMove();
+  el.setAttribute('aria-label',`Hàng ${Math.floor(idx/10)+1}, cột ${idx%10+1}: ${piece===null?'trống':piece===0?'X':'O'}`);
+  el.onclick=()=>{move({idx});beep(610,.025);};grid.append(el);
+ });board.append(grid);$('play-surface').replaceChildren(board);
+}
+const hands=['✊','✋','✌️'];
+function renderRps(){
+ const state=session.match;
+ const div=document.createElement('div');div.className='rps-stage';
+ const reveal=state.reveal;
+ const mine=reveal?hands[reveal.choices[session.seat]]:'❔',them=reveal?hands[reveal.choices[1-session.seat]]:'❔';
+ const chosen=state.yourChoice;
+ div.innerHTML=`<h2>${reveal?reveal.winner===null?'Hai bên hòa!':reveal.winner===session.seat?'Bạn thắng lượt này!':'Đối thủ thắng lượt này':'Ván '+state.round+' · Cùng ra tay!'}</h2><div class="rps-hands"><span>${mine}</span><b>VS</b><span>${them}</span></div><p>${chosen===null?'Chọn tay của mình; đối phương không xem trước được.':'✓ Bạn đã khóa tay. Đợi bạn bên kia nhé.'}</p><div class="rps-choices" id="rps-choices"></div>`;
+ const row=one('#rps-choices',div);
+ hands.forEach((h,i)=>{const b=document.createElement('button');b.textContent=h;b.type='button';b.title=['Búa','Bao','Kéo'][i];b.disabled=!session.connected.every(Boolean)||state.status==='finished'||chosen!==null||session.busy;b.onclick=()=>{move({choice:i});beep(720);};row.append(b);});
+ $('play-surface').replaceChildren(div);
+}
+function renderActions(){
+ const area=$('action-controls'),state=session.match,id=session.gameId;
+ area.replaceChildren();
+ if(!state)return;
+ if(state.status==='finished'){
+  setText('action-title','Một ván nữa nhé?');setText('action-description','Hai người cùng chọn chơi lại để bắt đầu ván mới. Hoặc chủ phòng có thể đổi trò.');
+  const b=document.createElement('button');b.className='btn primary wide';b.textContent=session.rematch[session.seat]?'✓ Đã đồng ý • chờ bạn':session.solo?'↻ Thử lại với máy':'↻ Chơi lại cùng bạn';b.disabled=!!session.rematch[session.seat];b.onclick=()=>send({type:'rematch'});area.append(b);
+  const c=document.createElement('button');c.className='btn outline wide';c.textContent='♧ Trở về phòng · Chọn trò khác';c.onclick=()=>view('lobby');area.append(c);return;
+ }
+ if(id==='quan'){
+  const selected=session.selected,amount=selected===null?'':session.match.cells[selected]?.n||0;
+  setText('action-title',selected===null?'Chọn ô để rải quân':'Đã chọn '+amount+' quân');
+  setText('action-description',selected===null?'Chọn một ô sáng ở hàng dưới cùng (phía bạn). Số quân luôn hiện trên ô.':'Hai nút trái / phải luôn theo hướng nhìn của bạn, dù bạn là người 1 hay người 2.');
+  if(selected!==null){const label=document.createElement('div');label.className='chosen-info';label.textContent=`✦ Ô đang chọn · ${amount} viên sỏi`;area.append(label);}
+  const buttons=document.createElement('div');buttons.className='direction-row';
+  for(const [dir,sign,label] of [[-1,'←','Rải sang trái'],[1,'→','Rải sang phải']]){
+   const btn=document.createElement('button');btn.className='direction';btn.innerHTML=`<span>${sign}</span>${label}`;btn.disabled=selected===null||!canMakeMove();btn.onclick=()=>quanMove(dir);buttons.append(btn);
+  }area.append(buttons);
+  const cancel=document.createElement('button');cancel.className='small-btn';cancel.textContent='Hủy chọn';cancel.disabled=selected===null;cancel.onclick=()=>{session.selected=null;renderPlay();};area.append(cancel);
+ }else if(id==='ganh'){
+  setText('action-title',session.selected===null?'Chọn một quân của bạn':'Chọn điểm đến');
+  setText('action-description',session.selected===null?'Chạm quân sáng để xem các điểm có thể đi.':'Chạm một vòng sáng liền kề để di chuyển. Quân đối thủ bị gánh/vây sẽ đổi màu.');
+  const btn=document.createElement('button');btn.className='btn outline wide';btn.textContent='✕ Bỏ chọn quân';btn.disabled=session.selected===null;btn.onclick=()=>{session.selected=null;renderPlay();};area.append(btn);
+ }else if(id==='caro'){
+  setText('action-title',canMakeMove()?'Đặt '+(session.seat===0?'X':'O'):'Chờ đối thủ đi');
+  setText('action-description','Hai người cùng nhìn một bàn Caro. Chỉ người đến lượt mới đặt được dấu vào ô trống.');
+ }else if(id==='rps'){
+  setText('action-title',state.yourChoice===null?'Chọn kín một tay':'Đã ra tay!');
+  setText('action-description','Hai người chọn riêng tư. Khi cả hai cùng chọn, trò chơi tự động mở tay. Ai thắng 3 lượt trước sẽ thắng ván.');
+ }
+}
+function showReaction(emoji,seat){
+ const el=document.createElement('div');el.className='flying-emoji';el.style.left=(seat===session.seat?20:63)+'%';el.style.bottom='16%';
+ el.textContent=emoji;const s=document.createElement('small');s.textContent=seat===session.seat?'Bạn':session.players[seat]?.name||'Bạn cùng chơi';el.append(s);$('reaction-layer').append(el);setTimeout(()=>el.remove(),2150);
+ if(seat!==session.seat)beep(880,.014);
+}
+function sendReaction(e){const btn=e.target.closest('[data-emoji]');if(btn){if(!session.room){toast('Hãy vào phòng để thả emoji nhé');return;}send({type:'reaction',emoji:btn.dataset.emoji});$('mobile-reaction-tray').hidden=true;}}
+$('emoji-buttons').addEventListener('click',sendReaction);
+$('mobile-reaction-tray').addEventListener('click',sendReaction);
+$('mobile-reaction-toggle').onclick=()=>{$('mobile-reaction-tray').hidden=!$('mobile-reaction-tray').hidden;};
+$('dock-left').onclick=()=>quanMove(-1);
+$('dock-right').onclick=()=>quanMove(1);
+function updateMobileHelpers(){
+ const visible=currentView==='play'&&!!session.gameId;
+ $('mobile-reaction-toggle').hidden=!visible;
+ if(!visible)$('mobile-reaction-tray').hidden=true;
+ const hasSelected=visible&&session.gameId==='quan'&&session.selected!==null&&canMakeMove();
+ $('mobile-move-dock').hidden=!hasSelected;
+ if(hasSelected)setText('dock-description',session.match.cells[session.selected].n+' quân · Rải về phía nào?');
+}
+
+
+// Sowing animation replays the authoritative server event stream. Draw only changed pits.
+function flyStone(from,to,duration){
+ if(reduceMotion()||session.three||currentView!=='play')return Promise.resolve();
+ const a=pitNodes.get(from)?.getBoundingClientRect(),b=pitNodes.get(to)?.getBoundingClientRect(),wrap=$('play-surface').getBoundingClientRect();
+ if(!a||!b)return Promise.resolve();
+ const node=document.createElement('i');node.className='flying-stone';node.style.left=(a.left+a.width/2-wrap.left)+'px';node.style.top=(a.top+a.height/2-wrap.top)+'px';$('play-surface').append(node);
+ const dx=b.left+b.width/2-a.left-a.width/2,dy=b.top+b.height/2-a.top-a.height/2;
+ const anim=node.animate([{transform:'translate(-50%,-50%) translate(0,0) scale(.8)'},{transform:`translate(-50%,-50%) translate(${dx/2}px,${dy/2-29}px) scale(1.23)`,offset:.48},{transform:`translate(-50%,-50%) translate(${dx}px,${dy}px) scale(.88)`}],{duration,easing:'cubic-bezier(.26,.12,.26,1)'});
+ return anim.finished.catch(()=>{}).then(()=>node.remove());
+}
+async function animateQuan(events,generation){
+ const drops=events.filter(e=>e.type==='drop').length;
+ const delay=reduceMotion()?0:Math.max(28,Math.min(110,3700/Math.max(1,drops)));
+ for(const e of events){
+  if(animGeneration!==generation)return;
+  if(e.type==='pickup')session.visual.cells[e.pit].n=0;
+  if(e.type==='drop'){
+   await flyStone(e.from,e.pit,delay);session.visual.cells[e.pit].n++;beep(510+(e.pit*29)%230,.014,.08);
+  }
+  if(e.type==='capture'){
+   session.visual.cells[e.pit].n=0;session.visual.cells[e.pit].q=0;beep(325,.045,.2);
+   toast(`✦ Ăn được ${e.value} điểm!`);
+  }
+  if(e.type==='refill')session.visual.cells[e.pit].n++;
+  if(session.three)session.graphics?.setState(session.visual.cells,null,session.seat,quanLegal);
+  else drawQuanPit(e.pit);
+  if(e.type==='pickup'&&!reduceMotion())await sleep(30);
+ }
+}
+
+function exit3d(){
+ if(session.three){session.three=false;session.graphics?.stop();$('three-toggle').textContent='◈ Xem 3D';}
+}
+$('three-toggle').onclick=async()=>{
+ if(session.gameId!=='quan')return;
+ if(session.three){exit3d();session.graphics?.stop();setupQuan();renderPlay();return;}
+ const toggle=$('three-toggle');toggle.disabled=true;toggle.textContent='Đang tải 3D…';
+ try{
+  const host=document.createElement('div');host.className='three-viewport';host.id='three-viewport';$('play-surface').replaceChildren(host);
+  if(session.graphics){session.graphics.dispose();session.graphics=null;}
+  const {makeThreeView}=await import('/three-mode.js');session.graphics=await makeThreeView(host,selectQuan);
+  session.three=true;session.graphics.setState(session.visual.cells,session.selected,session.seat,quanLegal);session.graphics.reset(session.seat);session.graphics.start();session.graphics.resize();toggle.textContent='▦ Xem nhẹ';
+ }catch(e){console.error(e);session.three=false;session.graphics=null;toast('Không tải được 3D, chuyển lại chế độ nhẹ.');setupQuan();renderPlay();}
+ toggle.disabled=false;
+};
+window.addEventListener('resize',()=>{if(session.three)session.graphics?.resize();});
+window.addEventListener('keydown',e=>{if(currentView!=='play'||session.gameId!=='quan'||e.target.matches('input,textarea'))return;if(e.key==='ArrowLeft'){e.preventDefault();quanMove(-1);}if(e.key==='ArrowRight'){e.preventDefault();quanMove(1);}if(e.key==='Escape'){session.selected=null;renderPlay();}});
+
+const RULES={
+ quan:['Mỗi người có 5 ô Dân, mỗi ô ban đầu chứa 5 viên; 2 ô lớn hai đầu là Quan.','Khi đến lượt, chọn một ô Dân còn quân ở phía dưới bàn của bạn rồi chọn rải sang trái hoặc phải.','Rải từng viên theo vòng. Gặp ô Dân có quân thì bốc lên rải tiếp. Qua một ô trống để tới ô có quân có thể ăn quân đó.','Khi hết quân bên mình sẽ phải rải lại (trừ 5 điểm). Ván kết thúc khi đã ăn hết 2 Quan.','Góc nhìn hai người được xoay riêng; các nút trái/phải luôn tính theo phía của người đang chơi.'],
+ ganh:['Mỗi người bắt đầu với 8 quân trên 25 giao điểm của bàn 5×5.','Di chuyển một quân tới điểm trống liền kề theo đường kẻ. Các đường chéo chỉ hiện tại giao điểm cho phép.','Gánh: sau khi đi, nếu quân mới đứng giữa 2 quân đối phương nằm đối diện nhau trên một đường thì chúng chuyển thành quân của bạn.','Vây: nhóm quân đối phương không còn điểm trống liền kề để đi sẽ đổi thành quân của bạn.','Thắng khi đối phương hết quân hoặc không còn nước đi. Phiên bản này chưa dùng luật Mở bắt buộc.'],
+ caro:['Bàn 10×10. Người chơi 1 đánh X, người chơi 2 đánh O.','Hai người lần lượt chọn một ô trống.','Ai tạo được 5 dấu liền nhau theo hàng, cột hoặc đường chéo sẽ thắng. Đây là luật Caro đơn giản, không áp dụng luật chặn hai đầu.'],
+ rps:['Hai người cùng chọn Búa ✊, Bao ✋ hoặc Kéo ✌️.','Chọn tay của bạn sẽ được giữ kín trên máy chủ cho tới khi đối thủ cũng chọn.','Búa thắng Kéo, Kéo thắng Bao, Bao thắng Búa. Giống nhau thì hòa lượt.','Người thắng 3 lượt đầu tiên là người thắng ván.']
+};
+$('rules-toggle').onclick=()=>{const d=$('rules-dialog');setText('rules-name',GAME_BY_ID[session.gameId]?.name||'Luật chơi');$('rules-content').replaceChildren(...(RULES[session.gameId]||[]).map((t,i)=>{const p=document.createElement('p');p.textContent=`${i+1}. ${t}`;return p;}));d.showModal();};
+$('close-rules').onclick=$('rules-understood').onclick=()=>$('rules-dialog').close();
+$('nickname').value=nickname;
+$('save-nickname').onclick=()=>{
+ const clean=$('nickname').value.trim().slice(0,22).replace(/[<>]/g,'');if(!clean){toast('Hãy nhập một tên hiển thị nhé');return;}
+ nickname=clean;localStorage.setItem('sandinh-name',nickname);if(session.room)send({type:'name',name:nickname});toast('Đã lưu tên hiển thị!');
+};
+
+let stored;try{stored=JSON.parse(localStorage.getItem(SESSION_KEY)||'null');}catch{}
+const fromUrl=new URLSearchParams(location.search).get('room');
+if(fromUrl&&/^[a-f0-9]{6}$/i.test(fromUrl)){
+ const id=fromUrl.toUpperCase();view('lobby');
+ if(stored?.room===id&&stored.token){session.room=id;session.token=stored.token;connect({type:'resume',code:id,token:stored.token},true);}
+ else if(stored?.room&&stored.token){session.room=stored.room;session.token=stored.token;connect({type:'resume',code:stored.room,token:stored.token},true);toast('Bạn đang ở trong phòng cũ, hãy rời phòng để vào phòng mới.');}
+ else joinRoom(id);
+}else if(stored?.room&&stored.token){session.room=stored.room;session.token=stored.token;view('lobby');connect({type:'resume',code:stored.room,token:stored.token},true);}
+else if(location.hash&&['home','library','lobby','profile'].includes(location.hash.slice(1)))view(location.hash.slice(1));
+renderLobby();
+if('serviceWorker'in navigator && location.protocol!=='file:')window.addEventListener('load',()=>navigator.serviceWorker.register('/sw.js').catch(()=>{}));
