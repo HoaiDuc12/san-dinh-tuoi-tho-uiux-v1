@@ -9,6 +9,10 @@ const GAME_DATA=[
  {id:'ganh',name:'Cờ Gánh',emoji:'♟️',desc:'Đi theo đường kẻ, gánh và vây quân đối thủ.',color:'ochre',online:true},
  {id:'caro',name:'Caro học trò',emoji:'✏️',desc:'Năm dấu liên tiếp, một lời hẹn trên trang giấy.',color:'paper',online:true},
  {id:'rps',name:'Oẳn tù tì',emoji:'✊',desc:'Hai người chọn kín rồi cùng lật. Ai thắng ba lượt?',color:'rose',online:true},
+ {id:'sudoku',name:'Sudoku',emoji:'🔢',desc:'Giải ô số 9×9 · chơi một mình, có kiểm tra đáp án.',color:'paper',online:false,soloReady:true},
+ {id:'chess',name:'Cờ vua',emoji:'♚',desc:'Cờ vua quốc tế: chuẩn bị bộ luật đầy đủ.',color:'green',online:false},
+ {id:'xiangqi',name:'Cờ tướng',emoji:'帥',desc:'Đấu trí trên bàn sông Hán, chuẩn bị phát triển.',color:'ochre',online:false},
+ {id:'go',name:'Cờ vây',emoji:'⚫',desc:'Đặt quân, chiếm đất, tính khí — đang nghiên cứu luật.',color:'rose',online:false},
  {id:'lo-co',name:'Nhảy lò cò',emoji:'🟫',desc:'Những ô gạch và tiếng cười sân trường.',color:'ochre',online:false},
  {id:'chuyen',name:'Chơi chuyền',emoji:'🪵',desc:'Khéo tay, nhanh mắt, từng nhịp tuổi thơ.',color:'green',online:false},
  {id:'banh-dua',name:'Banh đũa',emoji:'🥢',desc:'Nhịp tay và những chiếc que tre.',color:'paper',online:false},
@@ -18,8 +22,12 @@ const GAME_DATA=[
 ];
 const GAME_BY_ID=Object.fromEntries(GAME_DATA.map(g=>[g.id,g]));
 const SESSION_KEY='sandinh-v3-room';
+const bgm=$('music');bgm.volume=Number(localStorage.getItem('sandinh-bgm-volume')||.28);let bgmOn=localStorage.getItem('sandinh-music')==='on';
+$('music-toggle').onclick=async()=>{bgmOn=!bgmOn;localStorage.setItem('sandinh-music',bgmOn?'on':'off');try{if(bgmOn)await bgm.play();else bgm.pause();}catch{bgmOn=false;toast('Nhấn lại để bật nhạc (trình duyệt đang chặn tự phát)');} $('music-toggle').textContent=bgmOn?'♫':'♬';};
+document.addEventListener('pointerdown',()=>{if(bgmOn&&bgm.paused)bgm.play().catch(()=>{});},{once:true});
+
 let nickname=localStorage.getItem('sandinh-name')||'Người bạn sân đình';
-const session={room:'',seat:null,token:'',gameId:null,match:null,visual:null,connected:[false,false],players:[{name:'Người chơi 1'},{name:'Người chơi 2'}],rematch:[false,false],socket:null,retry:null,intentional:false,selected:null,busy:false,graphics:null,three:false,events:new Map(),playback:false,pending:[],lastGame:null,history:[],solo:false};
+const session={room:'',seat:null,token:'',gameId:null,match:null,visual:null,connected:[false,false],players:[{name:'Người chơi 1'},{name:'Người chơi 2'}],rematch:[false,false],socket:null,retry:null,intentional:false,selected:null,busy:false,graphics:null,three:false,events:new Map(),playback:false,pending:[],lastGame:null,history:[],votes:[null,null],settings:{difficulty:'medium',board:'classic',light:'twilight',turnSeconds:0},solo:false};
 const pitNodes=new Map();let currentView='home';let toastTimer=null,animGeneration=0;
 const reduceMotion=()=>matchMedia('(prefers-reduced-motion: reduce)').matches;
 let sound=localStorage.getItem('sandinh-sound')!=='off',audioCtx=null;
@@ -38,7 +46,7 @@ function view(which){
  updateMobileHelpers();
 }
 document.addEventListener('click',event=>{const btn=event.target.closest('[data-view]');if(btn)view(btn.dataset.view);});
-function gameCard(g){return `<article class="game-card"><div class="card-art ${g.color}"><span class="card-status ${g.online?'':'soon'}">${g.online?'● CHƠI ONLINE':'SẮP RA MẮT'}</span><span class="card-icon">${g.emoji}</span></div><div class="card-body"><h3>${g.name}</h3><p>${g.desc}</p><div class="card-footer"><small>${g.online?'♧ 2 người · Một mã phòng':'✧ Đang phát triển'}</small><button data-pick="${g.id}" ${g.online?'':'disabled'}>${g.online?'Chơi ngay →':'Chưa mở'}</button></div></div></article>`;}
+function gameCard(g){return `<article class="game-card"><div class="card-art ${g.color}"><span class="card-status ${g.online?'':'soon'}">${g.online?'● CHƠI ONLINE':g.soloReady?'● CHƠI SOLO':'SẮP RA MẮT'}</span><span class="card-icon">${g.emoji}</span></div><div class="card-body"><h3>${g.name}</h3><p>${g.desc}</p><div class="card-footer"><small>${g.online?'♧ 2 người · Một mã phòng':g.soloReady?'✧ Chơi offline':'✧ Đang phát triển'}</small><button data-pick="${g.id}" ${g.online||g.soloReady?'':'disabled'}>${g.online||g.soloReady?'Chơi ngay →':'Chưa mở'}</button></div></div></article>`;}
 function renderCards(filter='all'){
  $('featured-games').innerHTML=GAME_DATA.filter(g=>g.online).map(gameCard).join('');
  $('all-games').innerHTML=GAME_DATA.filter(g=>filter==='all'||(filter==='online'&&g.online)||(filter==='soon'&&!g.online)).map(gameCard).join('');
@@ -48,7 +56,7 @@ all('[data-filter]').forEach(b=>b.onclick=()=>{all('[data-filter]').forEach(c=>c
 document.addEventListener('click',event=>{
  const button=event.target.closest('[data-pick]');if(!button)return;
  const id=button.dataset.pick;
- if(!GAME_BY_ID[id]?.online)return;
+ if(GAME_BY_ID[id]?.soloReady){openSudoku();return;} if(!GAME_BY_ID[id]?.online)return;
  if(session.room){if(session.seat===0){selectGame(id);}else toast('Hãy nhờ chủ phòng chọn trò này nhé');view('lobby');}
  else{view('lobby');toast('Tạo phòng hoặc nhập mã trước, sau đó chọn trò nhé!');}
 });
@@ -71,6 +79,7 @@ function connect(intent,automatic=false){
    else renderPlay();return;
   }
   if(m.type==='left')return;
+  if(m.type==='replay'){openReplay(m.frames);return;}
   if(m.type==='reaction'){showReaction(m.emoji,m.seat);return;}
   if(m.type==='animation'){
    if(m.gameId==='quan')session.events.set(m.gameId+':'+m.seq,m.events);
@@ -88,7 +97,7 @@ function connect(intent,automatic=false){
  };
  socket.onerror=()=>{};
 }
-function forgetRoom(){session.room='';session.token='';session.seat=null;session.gameId=null;session.match=null;session.visual=null;session.connected=[false,false];session.rematch=[false,false];session.busy=false;session.selected=null;session.events.clear();session.pending.length=0;session.history=[];session.solo=false;animGeneration++;localStorage.removeItem(SESSION_KEY);}
+function forgetRoom(){session.room='';session.token='';session.seat=null;session.gameId=null;session.match=null;session.visual=null;session.connected=[false,false];session.rematch=[false,false];session.busy=false;session.selected=null;session.events.clear();session.pending.length=0;session.history=[];session.votes=[null,null];session.solo=false;animGeneration++;localStorage.removeItem(SESSION_KEY);}
 function createRoom(){if(session.room){view('lobby');return;}view('lobby');connect({type:'create',name:nickname});}
 function joinRoom(code){
  code=String(code||'').trim().toUpperCase();
@@ -104,11 +113,7 @@ $('leave-room').onclick=()=>{
  if(!confirm('Bạn muốn rời phòng? Nếu có bạn đang chơi cùng, họ sẽ thấy bạn đã rời.'))return;
  send({type:'leave'});session.intentional=true;session.socket?.close();session.socket=null;forgetRoom();view('lobby');toast('Đã rời phòng.');
 };
-function selectGame(id){if(!session.room){view('lobby');return;}if(session.seat!==0){toast('Chủ phòng sẽ chọn trò cho cả hai nhé');return;}
- if(session.gameId===id){view('play');return;}
- if(session.gameId&&session.match?.status==='playing'&&!confirm('Chọn trò khác sẽ bắt đầu một ván mới. Tiếp tục?'))return;
- send({type:'select_game',gameId:id});
-}
+function selectGame(id){if(!session.room){view('lobby');return;}send({type:'vote_game',gameId:id});toast('Đã bỏ phiếu '+(GAME_BY_ID[id]?.name||id)+' · chờ người còn lại đồng ý');}
 $('back-to-lobby').onclick=()=>{view('lobby');};
 $('play-history').onclick=()=>view('lobby');
 async function copyInvite(){if(session.solo){toast('Đây là phòng luyện tập với máy, không thể mời thêm người');return;}const url=`${location.origin}/?room=${encodeURIComponent(session.room)}#lobby`;try{await navigator.clipboard.writeText(url);toast('Đã sao chép link mời!');}catch{toast('Mã phòng: '+session.room);}}
@@ -118,7 +123,7 @@ function renderHistory(){
  const host=$('room-history');if(!host)return;
  if(!session.history.length){host.innerHTML='<p class="history-empty">Chưa có ván nào được ghi lại trong phòng này. Hoàn thành một ván để lưu kỷ niệm nhé.</p>';return;}
  host.replaceChildren(...session.history.map(h=>{
- const item=document.createElement('article');item.className='history-row';
+ const item=document.createElement('article');item.className='history-row';item.tabIndex=0;item.title='Chọn để xem lại ván đấu';item.onclick=()=>send({type:'replay',id:h.id});item.onkeydown=e=>{if(e.key==='Enter')item.click();};
  const icon=document.createElement('span');icon.className='history-icon';icon.textContent=GAME_BY_ID[h.gameId]?.emoji||'🏮';
  const desc=document.createElement('div');const title=document.createElement('b');title.textContent=h.gameName;
  const detail=document.createElement('small');detail.textContent=new Date(h.at).toLocaleString('vi-VN')+' · '+(h.reason==='finished'?(h.winner==='draw'?'Hòa':h.winner===null?'Kết thúc':'Thắng: '+(h.players[h.winner]||'Người chơi')):'Đã đổi trò / rời phòng')+' · '+h.turns+' lượt';
@@ -141,9 +146,12 @@ function renderLobby(){
   one('b',el).textContent=session.players[i]?.name||`Người chơi ${i+1}`;
   one('span:not(.member-avatar)',el).textContent=session.connected[i]?'● Đã vào sân':'○ Đang chờ kết nối';
  }
- $('host-hint').textContent=session.seat===0?'Bạn là chủ phòng • hãy chọn trò':'Đang chờ chủ phòng chọn trò';
+ $('host-hint').textContent='Mỗi người một phiếu · trùng nhau để bắt đầu';
  renderHistory();
- $('room-game-picker').innerHTML=GAME_DATA.filter(g=>g.online).map(g=>`<button class="room-pick" data-room-game="${g.id}" ${session.seat===0?'':'disabled'}><span class="icon">${g.emoji}</span><span><b>${g.name}</b><small>${session.gameId===g.id?'● ĐANG CHƠI':'Hai người cùng chơi'}</small></span></button>`).join('');
+ $('vote-message').textContent=session.solo?'Chọn trò để luyện tập với máy.':session.votes?.every(Boolean)?'Hai phiếu chưa trùng nhau — hãy cùng chọn một trò.':`Phiếu chọn: ${session.votes?.map((x,i)=>x?(session.players[i]?.name||'Người chơi')+' → '+(GAME_BY_ID[x]?.name||x):'Đang chờ').join(' · ')}`;
+ for(const [id,key] of [['bot-level','difficulty'],['board-style','board'],['light-style','light'],['turn-seconds','turnSeconds']]){$(id).value=String(session.settings[key]);$(id).disabled=session.seat!==0;} $('save-settings').disabled=session.seat!==0;
+ document.documentElement.dataset.board=session.settings.board;document.documentElement.dataset.light=session.settings.light;
+ $('room-game-picker').innerHTML=GAME_DATA.filter(g=>g.online).map(g=>`<button class="room-pick" data-room-game="${g.id}" ><span class="icon">${g.emoji}</span><span><b>${g.name}</b><small>${session.gameId===g.id?'● ĐANG CHƠI':session.votes?.includes(g.id)?'✓ Đã có phiếu':'Bình chọn' }</small></span></button>`).join('');
 }
 $('room-game-picker').addEventListener('click',e=>{const btn=e.target.closest('[data-room-game]');if(btn)selectGame(btn.dataset.roomGame);});
 
@@ -156,7 +164,7 @@ async function queueState(m){
 }
 async function applyState(m){
  const oldId=session.gameId,previous=session.visual;
- session.room=m.room;session.token=m.token;session.seat=m.seat;session.connected=m.connected;session.players=m.players;session.rematch=m.rematch;session.gameId=m.gameId;session.match=m.state;session.history=m.history||[];session.solo=!!m.solo;storeSession();
+ session.room=m.room;session.token=m.token;session.seat=m.seat;session.connected=m.connected;session.players=m.players;session.rematch=m.rematch;session.gameId=m.gameId;session.match=m.state;session.history=m.history||[];session.votes=m.votes||[null,null];session.settings=m.settings||session.settings;session.solo=!!m.solo;storeSession();
  const switched=oldId!==m.gameId;
  if(switched){animGeneration++;session.selected=null;session.busy=false;session.visual=null;session.events.clear();exit3d();}
  if(!m.gameId){session.visual=null;session.selected=null;renderLobby();view('lobby');return;}
@@ -381,7 +389,7 @@ function flyStone(from,to,duration){
  if(!a||!b)return Promise.resolve();
  const node=document.createElement('i');node.className='flying-stone';node.style.left=(a.left+a.width/2-wrap.left)+'px';node.style.top=(a.top+a.height/2-wrap.top)+'px';$('play-surface').append(node);
  const dx=b.left+b.width/2-a.left-a.width/2,dy=b.top+b.height/2-a.top-a.height/2;
- const anim=node.animate([{transform:'translate(-50%,-50%) translate(0,0) scale(.8)'},{transform:`translate(-50%,-50%) translate(${dx/2}px,${dy/2-29}px) scale(1.23)`,offset:.48},{transform:`translate(-50%,-50%) translate(${dx}px,${dy}px) scale(.88)`}],{duration,easing:'cubic-bezier(.26,.12,.26,1)'});
+ const lift=Math.min(70,Math.max(22,Math.hypot(dx,dy)*.3));const anim=node.animate([{transform:'translate(-50%,-50%) translate(0,0) rotate(-15deg) scale(.9)',offset:0},{transform:`translate(-50%,-50%) translate(${dx*.48}px,${dy*.48-lift}px) rotate(110deg) scale(1.1)`,offset:.49},{transform:`translate(-50%,-50%) translate(${dx}px,${dy}px) rotate(190deg) scale(.84)`,offset:.83},{transform:`translate(-50%,-50%) translate(${dx}px,${dy-8}px) rotate(200deg) scale(.9)`,offset:.91},{transform:`translate(-50%,-50%) translate(${dx}px,${dy}px) rotate(205deg) scale(.88)`,offset:1}],{duration,easing:'linear'});
  return anim.finished.catch(()=>{}).then(()=>node.remove());
 }
 async function animateQuan(events,generation){
@@ -447,3 +455,22 @@ if(fromUrl&&/^[a-f0-9]{6}$/i.test(fromUrl)){
 else if(location.hash&&['home','library','lobby','profile'].includes(location.hash.slice(1)))view(location.hash.slice(1));
 renderLobby();
 if('serviceWorker'in navigator && location.protocol!=='file:')window.addEventListener('load',()=>navigator.serviceWorker.register('/sw.js').catch(()=>{}));
+
+$('save-settings').onclick=()=>{send({type:'settings',settings:{difficulty:$('bot-level').value,board:$('board-style').value,light:$('light-style').value,turnSeconds:Number($('turn-seconds').value)}});toast('Đã gửi tùy chỉnh phòng');};
+let replayFrames=[],replayIndex=0,replayTimer=null;
+function replayDraw(){const f=replayFrames[replayIndex];if(!f)return;const st=f.state;setText('replay-meta',`Bước ${replayIndex+1}/${replayFrames.length} · Người đi: ${f.seat===null?'Bắt đầu':f.seat+1} · ${st.status}`);
+ let line='';if(st.cells?.length===12)line='Ô Quan: '+st.cells.map((c,i)=>`${i}:${c.n}${c.q?' (Quan)':''}`).join('  ')+'\nĐiểm: '+st.score.join(' - ');else if(st.cells?.length===100)line=Array.from({length:10},(_,i)=>st.cells.slice(i*10,i*10+10).map(v=>v===null?'·':v?'O':'X').join(' ')).join('\n');else if(st.cells?.length===25)line=Array.from({length:5},(_,i)=>st.cells.slice(i*5,i*5+5).map(v=>v===null?'·':v?'○':'●').join(' ')).join('\n');else line='Tỉ số: '+(st.scores||[]).join(' - ')+'\nVòng: '+st.round;setText('replay-board',line);}
+function stopReplay(){if(replayTimer){clearInterval(replayTimer);replayTimer=null;}$('replay-play').textContent='▶ Phát';}
+function openReplay(frames){stopReplay();replayFrames=frames||[];replayIndex=0;replayDraw();$('replay-dialog').showModal();}
+$('replay-close').onclick=()=>{stopReplay();$('replay-dialog').close();};$('replay-dialog').onclose=stopReplay;
+$('replay-prev').onclick=()=>{replayIndex=Math.max(0,replayIndex-1);replayDraw();};$('replay-next').onclick=()=>{replayIndex=Math.min(replayFrames.length-1,replayIndex+1);replayDraw();};
+$('replay-play').onclick=()=>{if(replayTimer){stopReplay();return;}if(replayIndex>=replayFrames.length-1)replayIndex=0;const tick=()=>{if(replayIndex>=replayFrames.length-1){stopReplay();return;}replayIndex++;replayDraw();};replayTimer=setInterval(tick,Number($('replay-speed').value));$('replay-play').textContent='⏸ Dừng';};
+$('replay-speed').onchange=()=>{if(replayTimer){stopReplay();$('replay-play').click();}};
+
+$('music-volume').value=Math.round(bgm.volume*100);$('music-volume').oninput=e=>{bgm.volume=Number(e.target.value)/100;localStorage.setItem('sandinh-bgm-volume',bgm.volume);};
+const sudokuSolution='534678912672195348198342567859761423426853791713924856961537284287419635345286179';
+const sudokuBase='530070000600195000098000060800060003400803001700020006060000280000419005000080079';let sudokuPuzzle='';
+function drawSudoku(){const grid=$('sudoku-grid');grid.replaceChildren();for(let i=0;i<81;i++){const input=document.createElement('input');input.maxLength=1;input.inputMode='numeric';input.pattern='[1-9]';input.setAttribute('aria-label',`Hàng ${Math.floor(i/9)+1} cột ${i%9+1}`);const digit=sudokuPuzzle[i];if(digit!=='0'){input.value=digit;input.disabled=true;input.classList.add('given');}else input.addEventListener('input',()=>{input.value=input.value.replace(/[^1-9]/g,'').slice(0,1);input.classList.remove('wrong');});grid.append(input);}}
+function openSudoku(){if(!sudokuPuzzle)sudokuPuzzle=sudokuBase;drawSudoku();$('sudoku-dialog').showModal();}
+$('sudoku-close').onclick=()=>$('sudoku-dialog').close();$('sudoku-new').onclick=()=>{sudokuPuzzle=sudokuBase;drawSudoku();setText('sudoku-status','Ván mới đã sẵn sàng.');};
+$('sudoku-check').onclick=()=>{const cells=[...$('sudoku-grid').children];let wrong=0,empty=0;cells.forEach((input,i)=>{input.classList.toggle('wrong',!!input.value&&input.value!==sudokuSolution[i]);if(input.value&&input.value!==sudokuSolution[i])wrong++;if(!input.value)empty++;});setText('sudoku-status',wrong?`${wrong} ô chưa đúng · kiểm tra các ô màu đỏ.`:empty?`Đúng đến đây rồi! Còn ${empty} ô trống.`:'🎉 Giải thành công!');};

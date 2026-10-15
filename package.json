@@ -1,1 +1,1 @@
-{"name":"san-dinh-tuoi-tho","version":"3.0.0","private":true,"type":"module","scripts":{"start":"node server.js","test":"node --test"},"engines":{"node":">=20"},"dependencies":{"ws":"^8.18.3"}}
+{"name":"san-dinh-tuoi-tho","version":"5.0.0","private":true,"type":"module","scripts":{"start":"node server.js","test":"node --test"},"engines":{"node":">=22.13"},"dependencies":{"ws":"^8.18.3"}}
