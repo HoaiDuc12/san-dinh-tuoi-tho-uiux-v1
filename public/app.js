@@ -1,3 +1,5 @@
+import {legalFor} from './strategy-games.js';
+import {initSudoku} from './sudoku-ui.js';
 const $=id=>document.getElementById(id);
 const one=(selector,root=document)=>root.querySelector(selector);
 const all=(selector,root=document)=>[...root.querySelectorAll(selector)];
@@ -10,9 +12,9 @@ const GAME_DATA=[
  {id:'caro',name:'Caro học trò',emoji:'✏️',desc:'Năm dấu liên tiếp, một lời hẹn trên trang giấy.',color:'paper',online:true},
  {id:'rps',name:'Oẳn tù tì',emoji:'✊',desc:'Hai người chọn kín rồi cùng lật. Ai thắng ba lượt?',color:'rose',online:true},
  {id:'sudoku',name:'Sudoku',emoji:'🔢',desc:'Giải ô số 9×9 · chơi một mình, có kiểm tra đáp án.',color:'paper',online:false,soloReady:true},
- {id:'chess',name:'Cờ vua',emoji:'♚',desc:'Cờ vua quốc tế: chuẩn bị bộ luật đầy đủ.',color:'green',online:false},
- {id:'xiangqi',name:'Cờ tướng',emoji:'帥',desc:'Đấu trí trên bàn sông Hán, chuẩn bị phát triển.',color:'ochre',online:false},
- {id:'go',name:'Cờ vây',emoji:'⚫',desc:'Đặt quân, chiếm đất, tính khí — đang nghiên cứu luật.',color:'rose',online:false},
+ {id:'chess',name:'Cờ vua',emoji:'♚',desc:'Cờ vua 8×8 · nhập thành, bắt tốt qua đường, phong hậu.',color:'green',online:true},
+ {id:'xiangqi',name:'Cờ tướng',emoji:'帥',desc:'Bàn sông Hán 9×10 · pháo, mã, tượng và tướng.',color:'ochre',online:true},
+ {id:'go',name:'Cờ vây',emoji:'⚫',desc:'Bàn 9×9 · bắt quân, tính khí, đi qua lượt và tính đất.',color:'rose',online:true},
  {id:'lo-co',name:'Nhảy lò cò',emoji:'🟫',desc:'Những ô gạch và tiếng cười sân trường.',color:'ochre',online:false},
  {id:'chuyen',name:'Chơi chuyền',emoji:'🪵',desc:'Khéo tay, nhanh mắt, từng nhịp tuổi thơ.',color:'green',online:false},
  {id:'banh-dua',name:'Banh đũa',emoji:'🥢',desc:'Nhịp tay và những chiếc que tre.',color:'paper',online:false},
@@ -23,17 +25,17 @@ const GAME_DATA=[
 const GAME_BY_ID=Object.fromEntries(GAME_DATA.map(g=>[g.id,g]));
 const SESSION_KEY='sandinh-v3-room';
 const bgm=$('music');bgm.volume=Number(localStorage.getItem('sandinh-bgm-volume')||.28);let bgmOn=localStorage.getItem('sandinh-music')==='on';
-$('music-toggle').onclick=async()=>{bgmOn=!bgmOn;localStorage.setItem('sandinh-music',bgmOn?'on':'off');try{if(bgmOn)await bgm.play();else bgm.pause();}catch{bgmOn=false;toast('Nhấn lại để bật nhạc (trình duyệt đang chặn tự phát)');} $('music-toggle').textContent=bgmOn?'♫':'♬';};
+$('music-toggle').onclick=async()=>{bgmOn=!bgmOn;sound=bgmOn;localStorage.setItem('sandinh-music',bgmOn?'on':'off');localStorage.setItem('sandinh-sound',bgmOn?'on':'off');try{if(bgmOn)await bgm.play();else bgm.pause();}catch{bgmOn=false;sound=false;toast('Trình duyệt chưa cho phép phát nhạc · thử lại sau khi chạm trang');} $('music-toggle').textContent=bgmOn?'🔊':'🔇';$('music-toggle').setAttribute('aria-pressed',String(bgmOn));};
 document.addEventListener('pointerdown',()=>{if(bgmOn&&bgm.paused)bgm.play().catch(()=>{});},{once:true});
 
 let nickname=localStorage.getItem('sandinh-name')||'Người bạn sân đình';
 const session={room:'',seat:null,token:'',gameId:null,match:null,visual:null,connected:[false,false],players:[{name:'Người chơi 1'},{name:'Người chơi 2'}],rematch:[false,false],socket:null,retry:null,intentional:false,selected:null,busy:false,graphics:null,three:false,events:new Map(),playback:false,pending:[],lastGame:null,history:[],votes:[null,null],settings:{difficulty:'medium',board:'classic',light:'twilight',turnSeconds:0},solo:false};
 const pitNodes=new Map();let currentView='home';let toastTimer=null,animGeneration=0;
 const reduceMotion=()=>matchMedia('(prefers-reduced-motion: reduce)').matches;
-let sound=localStorage.getItem('sandinh-sound')!=='off',audioCtx=null;
+let sound=bgmOn,audioCtx=null;
 function beep(freq=550,volume=.02,duration=.12){if(!sound)return;try{audioCtx??=new(window.AudioContext||window.webkitAudioContext)();if(audioCtx.state==='suspended')audioCtx.resume();const osc=audioCtx.createOscillator(),gain=audioCtx.createGain(),at=audioCtx.currentTime;osc.type='sine';osc.frequency.setValueAtTime(freq,at);osc.frequency.exponentialRampToValueAtTime(Math.max(90,freq/2),at+duration);gain.gain.setValueAtTime(volume,at);gain.gain.exponentialRampToValueAtTime(.0001,at+duration);osc.connect(gain).connect(audioCtx.destination);osc.start(at);osc.stop(at+duration);}catch{}}
 function toast(message){$('toast').textContent=message;$('toast').classList.add('show');clearTimeout(toastTimer);toastTimer=setTimeout(()=>$('toast').classList.remove('show'),3400);}
-$('audio-toggle').onclick=()=>{sound=!sound;localStorage.setItem('sandinh-sound',sound?'on':'off');$('audio-toggle').textContent=sound?'♫':'♪̸';toast(sound?'Âm thanh đã bật':'Đã tắt âm thanh');};$('audio-toggle').textContent=sound?'♫':'♪̸';
+$('music-toggle').textContent=bgmOn?'🔊':'🔇';$('music-toggle').setAttribute('aria-pressed',String(bgmOn));
 
 function view(which){
  currentView=which;
@@ -43,6 +45,7 @@ function view(which){
  window.scrollTo({top:0,behavior:'instant'});
  if(which==='lobby')renderLobby();
  if(which==='play')renderPlay();
+ if(which==='profile')renderProfileStats();
  updateMobileHelpers();
 }
 document.addEventListener('click',event=>{const btn=event.target.closest('[data-view]');if(btn)view(btn.dataset.view);});
@@ -57,7 +60,7 @@ document.addEventListener('click',event=>{
  const button=event.target.closest('[data-pick]');if(!button)return;
  const id=button.dataset.pick;
  if(GAME_BY_ID[id]?.soloReady){openSudoku();return;} if(!GAME_BY_ID[id]?.online)return;
- if(session.room){if(session.seat===0){selectGame(id);}else toast('Hãy nhờ chủ phòng chọn trò này nhé');view('lobby');}
+ if(session.room){selectGame(id);view('lobby');}
  else{view('lobby');toast('Tạo phòng hoặc nhập mã trước, sau đó chọn trò nhé!');}
 });
 $('home-create').onclick=()=>{if(session.room){view('lobby');return;}createRoom();};
@@ -196,6 +199,7 @@ function animateOtherGame(gameId,state){
   const target=root.querySelectorAll('[data-ganh]')[state.last?.to]||root.querySelector('.last');
   target?.animate([{filter:'brightness(2)',transform:'scale(.65)'},{filter:'brightness(1.3)',transform:'scale(1.18)'},{filter:'brightness(1)',transform:'scale(1)'}],{duration:430,easing:'ease-out'});beep(410,.026,.18);
  }
+ if(['chess','xiangqi','go'].includes(gameId)){const target=root.querySelector('.last');target?.animate([{transform:'scale(.45) translateY(-10px)',opacity:.2},{transform:'scale(1.1)',opacity:1},{transform:'scale(1)',opacity:1}],{duration:360,easing:'cubic-bezier(.2,.8,.2,1)'});beep(460,.025,.14);}
  if(gameId==='rps'){
   all('.rps-hands span',root).forEach((el,i)=>el.animate([{transform:'translateY(18px) rotate(-13deg)',opacity:.3},{transform:'translateY(-12px) rotate(10deg)',opacity:1},{transform:'translateY(0) rotate(0)'}],{duration:490+i*70,easing:'cubic-bezier(.2,.7,.2,1)'}));
  }
@@ -210,6 +214,9 @@ function playerScore(seat){
  if(session.gameId==='rps')return session.match.scores[seat]+' / 3';
  if(session.gameId==='ganh')return session.match.cells.filter(x=>x===seat).length+' quân';
  if(session.gameId==='caro')return seat===0?'X':'O';
+ if(session.gameId==='go')return session.match.score?session.match.score[seat]+' điểm':(session.match.board.filter(x=>x===seat).length)+' quân';
+ if(session.gameId==='chess')return seat===0?'♔ Trắng':'♚ Đen';
+ if(session.gameId==='xiangqi')return seat===0?'🔴 Đỏ':'⚫ Đen';
  return '—';
 }
 function updateBanner(){
@@ -238,10 +245,11 @@ function renderPlay(){
  setText('my-name',session.players[mine]?.name||'Bạn');setText('opponent-name',session.players[opp]?.name||'Bạn cùng chơi');
  setText('my-score',playerScore(mine));setText('opponent-score',playerScore(opp));
  one('.player-icon',$('my-card')).textContent=mine===0?'01':'02';one('.player-icon',$('opponent-card')).textContent=opp===0?'01':'02';
- setText('board-hint',session.gameId==='quan'?'↻ Mỗi người nhìn bàn từ phía của mình. Con số trong ô là số quân thực tế.':session.gameId==='ganh'?'Các quân sáng là quân của bạn. Chạm quân rồi chọn giao điểm sáng.':session.gameId==='caro'?'Đánh lần lượt X rồi O · Nối năm dấu để thắng.':'Mỗi người chọn bí mật, cùng lật khi đã chọn xong.');
+ setText('board-hint',session.gameId==='quan'?'↻ Mỗi người nhìn bàn từ phía của mình. Con số trong ô là số quân thực tế.':session.gameId==='ganh'?'Các quân sáng là quân của bạn. Chạm quân rồi chọn giao điểm sáng.':session.gameId==='caro'?'Đánh lần lượt X rồi O · Nối năm dấu để thắng.':session.gameId==='go'?'⚫ Đen đi trước · 2 lượt qua liên tiếp sẽ tính đất · Trắng +5.5 komi.':session.gameId==='chess'?'♔ Quân trắng đi trước · chọn quân rồi chạm chấm sáng.':session.gameId==='xiangqi'?'帥 Quân đỏ đi trước · không được để tướng bị chiếu.':'Mỗi người chọn bí mật, cùng lật khi đã chọn xong.');
  updateBanner();
  $('three-toggle').hidden=session.gameId!=='quan';
  if(session.gameId==='quan')renderQuan();
+ else if(['chess','xiangqi','go'].includes(session.gameId))renderStrategy();
  else if(session.gameId==='ganh')renderGanh();
  else if(session.gameId==='caro')renderCaro();
  else if(session.gameId==='rps')renderRps();
@@ -330,6 +338,35 @@ function renderRps(){
  hands.forEach((h,i)=>{const b=document.createElement('button');b.textContent=h;b.type='button';b.title=['Búa','Bao','Kéo'][i];b.disabled=!session.connected.every(Boolean)||state.status==='finished'||chosen!==null||session.busy;b.onclick=()=>{move({choice:i});beep(720);};row.append(b);});
  $('play-surface').replaceChildren(div);
 }
+const CHESS_SYMBOLS={K:'♔',Q:'♕',R:'♖',B:'♗',N:'♘',P:'♙',k:'♚',q:'♛',r:'♜',b:'♝',n:'♞',p:'♟'};
+const XIANGQI_SYMBOLS={K:'帥',A:'仕',E:'相',H:'傌',R:'俥',C:'炮',P:'兵',k:'將',a:'士',e:'象',h:'馬',r:'車',c:'砲',p:'卒'};
+function renderStrategy(){
+ const id=session.gameId,state=session.match,board=state.board,cols=id==='xiangqi'?9:id==='chess'?8:9;
+ const can=canMakeMove();const moves=can&&session.selected!==null&&id!=='go'?legalFor(id,state,session.seat).filter(m=>m.from===session.selected):[];
+ const targets=new Set(moves.map(m=>m.to));const shell=document.createElement('div');shell.className='strategy-shell '+id;
+ const grid=document.createElement('div');grid.className='strategy-grid '+id;grid.style.setProperty('--cols',cols);
+ const order=Array.from({length:board.length},(_,i)=>session.seat===1?board.length-i-1:i);
+ for(const idx of order){const p=board[idx],cell=document.createElement('button');cell.type='button';cell.className='strategy-cell';cell.dataset.idx=idx;
+  const isMine=p!==null&&p!==undefined&&(id==='go'?p===session.seat:(session.seat===0?p===p.toUpperCase():p===p.toLowerCase()));
+  if(p!==null&&p!==undefined){cell.classList.add('occupied');cell.classList.add((id==='go'?p===0:(p===p.toUpperCase()))?'white-piece':'black-piece');}
+  if(id==='chess'&&(Math.floor(idx/8)+idx%8)%2===1)cell.classList.add('dark-square');
+  if(session.selected===idx)cell.classList.add('selected');if(targets.has(idx))cell.classList.add('legal-target');
+  if(state.last?.to===idx||state.last?.idx===idx)cell.classList.add('last');
+  if(id==='go'&&p!==null)cell.innerHTML='<span class="go-stone '+(p===0?'black':'white')+'"></span>';
+  else if(id==='chess')cell.innerHTML='<span class="chess-piece">'+(CHESS_SYMBOLS[p]||'')+'</span>';
+  else if(id==='xiangqi')cell.innerHTML='<span class="xiangqi-piece">'+(XIANGQI_SYMBOLS[p]||'')+'</span>';
+  cell.setAttribute('aria-label',`Hàng ${Math.floor(idx/cols)+1}, cột ${idx%cols+1}: ${p===null?'trống':'có quân'}`);
+  cell.onclick=()=>{
+   if(!can){toast('Hãy chờ đến lượt bạn nhé');return;}
+   if(id==='go'){if(p!==null){toast('Giao điểm đã có quân');return;}move({idx});return;}
+   if(session.selected!==null&&targets.has(idx)){const from=session.selected;session.selected=null;move({from,to:idx});return;}
+   if(isMine){session.selected=session.selected===idx?null:idx;beep(500,.01,.09);renderPlay();}
+   else toast('Chạm một quân của bạn, rồi chọn ô có chấm sáng');
+  };
+  grid.append(cell);
+ }
+ shell.append(grid);$('play-surface').replaceChildren(shell);
+}
 function renderActions(){
  const area=$('action-controls'),state=session.match,id=session.gameId;
  area.replaceChildren();
@@ -353,6 +390,11 @@ function renderActions(){
   setText('action-title',session.selected===null?'Chọn một quân của bạn':'Chọn điểm đến');
   setText('action-description',session.selected===null?'Chạm quân sáng để xem các điểm có thể đi.':'Chạm một vòng sáng liền kề để di chuyển. Quân đối thủ bị gánh/vây sẽ đổi màu.');
   const btn=document.createElement('button');btn.className='btn outline wide';btn.textContent='✕ Bỏ chọn quân';btn.disabled=session.selected===null;btn.onclick=()=>{session.selected=null;renderPlay();};area.append(btn);
+ }else if(['chess','xiangqi','go'].includes(id)){
+  setText('action-title',id==='go'?'Đặt quân lên giao điểm':session.selected===null?'Chọn quân của bạn':'Chọn điểm đến');
+  setText('action-description',id==='go'?'Đen đi trước. Hai lượt Qua liên tiếp sẽ tính điểm diện tích (Trắng +5.5).':'Chấm sáng chỉ các nước hợp lệ. Góc nhìn xoay theo người chơi.');
+  if(id==='go'){const b=document.createElement('button');b.className='btn outline wide';b.textContent='↷ Qua lượt (Pass)';b.disabled=!canMakeMove();b.onclick=()=>move({pass:true});area.append(b);}
+  else{const b=document.createElement('button');b.className='btn outline wide';b.textContent='✕ Bỏ chọn quân';b.disabled=session.selected===null;b.onclick=()=>{session.selected=null;renderPlay();};area.append(b);}
  }else if(id==='caro'){
   setText('action-title',canMakeMove()?'Đặt '+(session.seat===0?'X':'O'):'Chờ đối thủ đi');
   setText('action-description','Hai người cùng nhìn một bàn Caro. Chỉ người đến lượt mới đặt được dấu vào ô trống.');
@@ -434,6 +476,9 @@ const RULES={
  quan:['Mỗi người có 5 ô Dân, mỗi ô ban đầu chứa 5 viên; 2 ô lớn hai đầu là Quan.','Khi đến lượt, chọn một ô Dân còn quân ở phía dưới bàn của bạn rồi chọn rải sang trái hoặc phải.','Rải từng viên theo vòng. Gặp ô Dân có quân thì bốc lên rải tiếp. Qua một ô trống để tới ô có quân có thể ăn quân đó.','Khi hết quân bên mình sẽ phải rải lại (trừ 5 điểm). Ván kết thúc khi đã ăn hết 2 Quan.','Góc nhìn hai người được xoay riêng; các nút trái/phải luôn tính theo phía của người đang chơi.'],
  ganh:['Mỗi người bắt đầu với 8 quân trên 25 giao điểm của bàn 5×5.','Di chuyển một quân tới điểm trống liền kề theo đường kẻ. Các đường chéo chỉ hiện tại giao điểm cho phép.','Gánh: sau khi đi, nếu quân mới đứng giữa 2 quân đối phương nằm đối diện nhau trên một đường thì chúng chuyển thành quân của bạn.','Vây: nhóm quân đối phương không còn điểm trống liền kề để đi sẽ đổi thành quân của bạn.','Thắng khi đối phương hết quân hoặc không còn nước đi. Phiên bản này chưa dùng luật Mở bắt buộc.'],
  caro:['Bàn 10×10. Người chơi 1 đánh X, người chơi 2 đánh O.','Hai người lần lượt chọn một ô trống.','Ai tạo được 5 dấu liền nhau theo hàng, cột hoặc đường chéo sẽ thắng. Đây là luật Caro đơn giản, không áp dụng luật chặn hai đầu.'],
+ chess:['Trắng đi trước, quân đi theo luật Cờ vua quốc tế.','Có nhập thành, bắt tốt qua đường và tự phong hậu khi tốt đến hàng cuối.','Không được để vua bị chiếu. Chiếu bí thắng; hết nước nhưng không chiếu là hòa.','Hòa sau 50 nước mỗi bên không ăn quân/đi tốt. Phiên bản này chưa hỗ trợ hòa lặp lại vị trí 3 lần.'],
+ xiangqi:['Quân Đỏ đi trước trên bàn 9×10 có sông và hai cung.','Xe đi ngang dọc; Pháo cần một quân chắn khi ăn; Mã bị cản chân; Tượng không qua sông; Sĩ và Tướng ở trong cung.','Hai tướng không được nhìn thẳng nhau khi giữa không có quân. Không được để Tướng mình bị chiếu.','Chiếu bí hoặc hết nước đi hợp lệ được xử thắng cho bên còn lại.'],
+ go:['Cờ vây bản 9×9: Đen đi trước, mỗi lượt đặt một quân lên giao điểm trống.','Nhóm quân không còn khí sẽ bị bắt. Không được tự sát hoặc lặp lại ngay vị trí cũ (Ko đơn giản).','Có thể Qua lượt; sau 2 lần Qua liên tiếp sẽ tính diện tích: quân trên bàn và vùng trống do một màu bao quanh.','Trắng được cộng 5.5 điểm komi. Chưa áp dụng superko và thương lượng quân chết cuối trận.'],
  rps:['Hai người cùng chọn Búa ✊, Bao ✋ hoặc Kéo ✌️.','Chọn tay của bạn sẽ được giữ kín trên máy chủ cho tới khi đối thủ cũng chọn.','Búa thắng Kéo, Kéo thắng Bao, Bao thắng Búa. Giống nhau thì hòa lượt.','Người thắng 3 lượt đầu tiên là người thắng ván.']
 };
 $('rules-toggle').onclick=()=>{const d=$('rules-dialog');setText('rules-name',GAME_BY_ID[session.gameId]?.name||'Luật chơi');$('rules-content').replaceChildren(...(RULES[session.gameId]||[]).map((t,i)=>{const p=document.createElement('p');p.textContent=`${i+1}. ${t}`;return p;}));d.showModal();};
@@ -459,7 +504,7 @@ if('serviceWorker'in navigator && location.protocol!=='file:')window.addEventLis
 $('save-settings').onclick=()=>{send({type:'settings',settings:{difficulty:$('bot-level').value,board:$('board-style').value,light:$('light-style').value,turnSeconds:Number($('turn-seconds').value)}});toast('Đã gửi tùy chỉnh phòng');};
 let replayFrames=[],replayIndex=0,replayTimer=null;
 function replayDraw(){const f=replayFrames[replayIndex];if(!f)return;const st=f.state;setText('replay-meta',`Bước ${replayIndex+1}/${replayFrames.length} · Người đi: ${f.seat===null?'Bắt đầu':f.seat+1} · ${st.status}`);
- let line='';if(st.cells?.length===12)line='Ô Quan: '+st.cells.map((c,i)=>`${i}:${c.n}${c.q?' (Quan)':''}`).join('  ')+'\nĐiểm: '+st.score.join(' - ');else if(st.cells?.length===100)line=Array.from({length:10},(_,i)=>st.cells.slice(i*10,i*10+10).map(v=>v===null?'·':v?'O':'X').join(' ')).join('\n');else if(st.cells?.length===25)line=Array.from({length:5},(_,i)=>st.cells.slice(i*5,i*5+5).map(v=>v===null?'·':v?'○':'●').join(' ')).join('\n');else line='Tỉ số: '+(st.scores||[]).join(' - ')+'\nVòng: '+st.round;setText('replay-board',line);}
+ let line='';if(st.cells?.length===12)line='Ô Quan: '+st.cells.map((c,i)=>`${i}:${c.n}${c.q?' (Quan)':''}`).join('  ')+'\nĐiểm: '+st.score.join(' - ');else if(st.cells?.length===100)line=Array.from({length:10},(_,i)=>st.cells.slice(i*10,i*10+10).map(v=>v===null?'·':v?'O':'X').join(' ')).join('\n');else if(st.cells?.length===25)line=Array.from({length:5},(_,i)=>st.cells.slice(i*5,i*5+5).map(v=>v===null?'·':v?'○':'●').join(' ')).join('\n');else if(st.board?.length===64)line=Array.from({length:8},(_,i)=>st.board.slice(i*8,i*8+8).map(v=>CHESS_SYMBOLS[v]||'·').join(' ')).join('\n');else if(st.board?.length===90)line=Array.from({length:10},(_,i)=>st.board.slice(i*9,i*9+9).map(v=>XIANGQI_SYMBOLS[v]||'·').join(' ')).join('\n');else if(st.board?.length===81)line=Array.from({length:9},(_,i)=>st.board.slice(i*9,i*9+9).map(v=>v===null?'·':v===0?'●':'○').join(' ')).join('\n');else line='Tỉ số: '+(st.scores||[]).join(' - ')+'\nVòng: '+st.round;setText('replay-board',line);}
 function stopReplay(){if(replayTimer){clearInterval(replayTimer);replayTimer=null;}$('replay-play').textContent='▶ Phát';}
 function openReplay(frames){stopReplay();replayFrames=frames||[];replayIndex=0;replayDraw();$('replay-dialog').showModal();}
 $('replay-close').onclick=()=>{stopReplay();$('replay-dialog').close();};$('replay-dialog').onclose=stopReplay;
@@ -468,9 +513,19 @@ $('replay-play').onclick=()=>{if(replayTimer){stopReplay();return;}if(replayInde
 $('replay-speed').onchange=()=>{if(replayTimer){stopReplay();$('replay-play').click();}};
 
 $('music-volume').value=Math.round(bgm.volume*100);$('music-volume').oninput=e=>{bgm.volume=Number(e.target.value)/100;localStorage.setItem('sandinh-bgm-volume',bgm.volume);};
-const sudokuSolution='534678912672195348198342567859761423426853791713924856961537284287419635345286179';
-const sudokuBase='530070000600195000098000060800060003400803001700020006060000280000419005000080079';let sudokuPuzzle='';
-function drawSudoku(){const grid=$('sudoku-grid');grid.replaceChildren();for(let i=0;i<81;i++){const input=document.createElement('input');input.maxLength=1;input.inputMode='numeric';input.pattern='[1-9]';input.setAttribute('aria-label',`Hàng ${Math.floor(i/9)+1} cột ${i%9+1}`);const digit=sudokuPuzzle[i];if(digit!=='0'){input.value=digit;input.disabled=true;input.classList.add('given');}else input.addEventListener('input',()=>{input.value=input.value.replace(/[^1-9]/g,'').slice(0,1);input.classList.remove('wrong');});grid.append(input);}}
-function openSudoku(){if(!sudokuPuzzle)sudokuPuzzle=sudokuBase;drawSudoku();$('sudoku-dialog').showModal();}
-$('sudoku-close').onclick=()=>$('sudoku-dialog').close();$('sudoku-new').onclick=()=>{sudokuPuzzle=sudokuBase;drawSudoku();setText('sudoku-status','Ván mới đã sẵn sàng.');};
-$('sudoku-check').onclick=()=>{const cells=[...$('sudoku-grid').children];let wrong=0,empty=0;cells.forEach((input,i)=>{input.classList.toggle('wrong',!!input.value&&input.value!==sudokuSolution[i]);if(input.value&&input.value!==sudokuSolution[i])wrong++;if(!input.value)empty++;});setText('sudoku-status',wrong?`${wrong} ô chưa đúng · kiểm tra các ô màu đỏ.`:empty?`Đúng đến đây rồi! Còn ${empty} ô trống.`:'🎉 Giải thành công!');};
+const sudoku = initSudoku({toast,beep});
+function openSudoku(){sudoku.open();}
+
+// Public room totals from SQLite + private, device-local Sudoku record.
+async function renderProfileStats(){
+ const host=$('stat-cards');if(!host)return;
+ const create=(title,main,subtitle)=>{const card=document.createElement('article');card.className='stat-tile';const h=document.createElement('span'),v=document.createElement('strong'),p=document.createElement('small');h.textContent=title;v.textContent=main;p.textContent=subtitle;card.append(h,v,p);host.append(card);};
+ host.replaceChildren();
+ const stats=(()=>{try{return JSON.parse(localStorage.getItem('sandinh-sudoku-records-v6')||'{}');}catch{return {};}})();
+ let solved=0,fastest=null;for(const r of Object.values(stats)){solved+=r.wins||0;if(Number.isFinite(r.best)&&(fastest===null||r.best<fastest))fastest=r.best;}
+ create('🔢 Sudoku',String(solved)+' đề','Nhanh nhất: '+(fastest===null?'—':`${Math.floor(fastest/60)}:${String(fastest%60).padStart(2,'0')}`));
+ try{const response=await fetch('/api/stats',{cache:'no-store'});if(!response.ok)throw Error('not available');const data=await response.json();
+  for(const row of data.games||[])create((GAME_BY_ID[row.game]||{name:row.game,emoji:'🎲'}).emoji+' '+(GAME_BY_ID[row.game]?.name||row.game),String(row.matches||0)+' ván','Trên máy chủ · tất cả phòng');
+ }catch{create('Phòng online','—','Chưa kết nối được dữ liệu thống kê');}
+}
+$('profile-sudoku').onclick=()=>openSudoku();

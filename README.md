@@ -1,10 +1,20 @@
-# Sân Đình Tuổi Thơ V5 — Multiplayer Hub
+# Sân Đình Tuổi Thơ — V6 (prototype multiplayer)
 
-Phiên bản phát triển từ V4, giữ WebSocket game engine 4 trò online: Ô Ăn Quan, Cờ Gánh (biến thể đơn giản), Caro, Oẳn tù tì; thêm Sudoku solo.
+Bản nâng cấp từ V5. **Vui lòng sao lưu repository / dữ liệu hiện tại trước khi deploy.**
 
-## Cài đặt
+## Tính năng V6
 
-Yêu cầu **Node.js >= 22.13** (sử dụng `node:sqlite`).
+- **Một nút âm thanh** 🔊/🔇 điều khiển cả nhạc nền và tiếng hiệu ứng; desktop có thanh âm lượng nhạc. Nhạc lấy tại `public/assets/audio/bgm.mp3` (từ `public/index.html` là `./assets/audio/bgm.mp3`). **ZIP không bao gồm MP3**, hãy chép file của bạn vào đúng vị trí. Mobile tự yêu cầu thao tác bấm trước khi phát.
+- **Sudoku mới:** 4 mức Dễ / Vừa / Khó / Chuyên gia (phân chia sơ bộ bằng số ô gợi ý, không phải độ khó suy luận được đánh giá bởi solver chuyên nghiệp); mỗi đề sinh ngẫu nhiên và **kiểm tra có một nghiệm duy nhất**. Bàn số chạm trên điện thoại, tô liên quan hàng/cột/khối, phát hiện số trùng, ghi chú nhỏ, hoàn tác, xoá ô, gợi ý, kiểm tra, tính giờ, tự lưu đề dang dở và thành tích (số đề đã giải, kỷ lục thời gian, đề giải không dùng gợi ý). **Sudoku lưu bằng localStorage trên thiết bị**, không đồng bộ giữa các trình duyệt.
+- **Cờ vua:** 8×8, 2 người trực tuyến hoặc chơi với bot; luật đi quân, chiếu, chiếu bí, pat, nhập thành, bắt tốt qua đường, tự phong hậu, hòa 50 nước mỗi bên. **Chưa xử lý hòa do lặp ba lần vị trí, vật chất không đủ chiếu bí và lựa chọn phong thành xe/mã/tượng**. Bộ luật là phiên bản thực dụng, chưa chứng nhận tương thích toàn bộ FIDE.
+- **Cờ tướng:** 9×10, quân Xe/Mã/Tượng/Sĩ/Tướng/Pháo/Tốt, phép đi hợp lệ, cản chân mã, cản mắt tượng, cung, sông, pháo ăn qua màn, hai tướng đối mặt, chiếu và hết nước. **Chưa hỗ trợ luật cấm chiếu đuổi liên tục, hòa theo quy tắc giải đấu**.
+- **Cờ vây:** 9×9, đen đi trước, đánh tại giao điểm trống, bắt nhóm hết khí, cấm tự sát, ko đơn giản, nút **Qua lượt**, hai lần qua liên tiếp tính điểm theo **Chinese area scoring** với komi 5.5 cho Trắng. **Chưa hỗ trợ superko, xác nhận sống/chết và thương lượng quân chết khi kết thúc trận**; nên coi là luật giản lược cho chơi vui.
+- Các game mới có **server-side validation**, chọn quân + chấm gợi ý nước hợp lệ, xoay bàn theo ghế 2, giữ một mã phòng để bình chọn đổi game, emoji, replay snapshot, ba mức bot heuristic và lịch sử SQLite từ V5.
+- Màn **Góc ký ức** hiển thị thành tích Sudoku của thiết bị và tổng số ván mỗi trò đang lưu trong SQLite (tổng hợp công khai, không phải hồ sơ cá nhân đã xác thực).
+
+## Cài đặt local
+
+Yêu cầu Node.js **>= 22.13** (vì `node:sqlite`), npm.
 
 ```bash
 npm install
@@ -12,44 +22,37 @@ npm test
 npm start
 ```
 
-Mở `http://localhost:3000`.
+Truy cập `http://localhost:3000`.
 
-### Âm nhạc
+`npm test` chạy 24 test (14 test cũ và 10 test mới cho ba trò + Sudoku) trong bản đóng gói này.
 
-Đặt file MP3 **do bạn sở hữu hoặc được phép sử dụng** tại:
+### Kiểm tra nhiều thiết bị
 
-```
-public/assets/audio/bgm.mp3
-```
+1. Mở trang trên laptop, **Tạo phòng**.
+2. Gửi mã 6 ký tự hoặc copy link cho điện thoại.
+3. Cả hai chọn **cùng một trò** ở phòng chờ.
+4. Thử chơi 2 lượt, gửi emoji, trở lại phòng và đổi trò, dùng Replay trong nhật ký sau khi ván kết thúc/đổi trò.
+5. Thử đổi người tạo phòng và hướng nhìn để kiểm tra góc nhìn thứ hai.
 
-Đường dẫn bên ngoài website: `/assets/audio/bgm.mp3`. Nút `♬` trên thanh đầu bật/tắt nhạc, kéo thanh âm lượng trên desktop. Trình duyệt di động thường yêu cầu tương tác của người dùng trước khi phát nhạc. File âm thanh **không nằm trong ZIP**, vì chưa được gửi cùng dự án.
+## Cập nhật Render
 
-## Thay đổi V5
+1. **Sao lưu** GitHub repository đang phục vụ V5 (nên tạo branch `backup-v5`).
+2. Tải nội dung ZIP V6 lên cùng repository (đặt `server.js`, `games.js`, `rules.js`, `strategy-games.js`, `package.json`, `render.yaml` và thư mục `public/` ở thư mục gốc).
+3. Chép lại file nhạc **do bạn sở hữu quyền sử dụng** tại `public/assets/audio/bgm.mp3`. Giữ nguyên path.
+4. Push commit; Render service hiện có sẽ tự deploy hoặc chọn **Manual Deploy → Deploy latest commit**.
+5. Kiểm tra `https://<your-render-domain>/health` thấy `games:7`, vào trang, kiểm tra các trò mới và hai thiết bị cùng phòng.
+6. Nếu trang vẫn cũ, reload mạnh (Ctrl+Shift+R), đợi Service Worker nâng cấp; cache key V6 khác V5.
 
-- **Bỏ phiếu chọn trò:** hai ghế cùng bình chọn; khi cùng chọn một trò, server mới chuyển game. Chọn lại game đang chơi cũng tạo ván mới nếu cả hai đồng ý. Chế độ solo tự chấp nhận phiếu của máy.
-- **Bot 3 chế độ:** Dễ thiên ngẫu nhiên, Vừa heuristic có nhiễu, Khó heuristic tham lam ít nhiễu (không phải minimax/AI mạnh); server sinh nước đi hợp lệ.
-- **Replay:** lưu snapshot cho mỗi lượt server xử lý; chọn ván trong lịch sử để xem, tua từng bước hay 0.5×–4×. Replay hiện là trạng thái bàn **2D dạng chữ** để hoạt động với mọi game; chưa có bản đồ họa cinematic/timeline vật lý.
-- **SQLite:** `data/sandinh.sqlite` lưu kết quả và bản ghi replay. API `/api/stats` trả về tổng số ván theo game. Không có hệ thống tài khoản, vì vậy đây là thống kê ván, *không phải hồ sơ người chơi xác thực*.
-- **Tùy chỉnh phòng:** 3 kiểu bàn, 3 tông ánh sáng (CSS), 3 mức bot. Mục “thời gian lượt” hiện chỉ là lựa chọn UI và **chưa xử phạt khi hết giờ**.
-- **Sỏi:** nâng animation 2.5D thành cung bay, xoay và nảy nhẹ (mô phỏng bằng keyframes, **chưa có rigid-body collision solver**).
-- **Sudoku:** giải một đề 9x9 offline, nhập số và kiểm tra. Chức năng “ván mới” đặt lại cùng đề; chưa sinh đề ngẫu nhiên.
-- **Đã thêm trang giới thiệu** Cờ vua, Cờ tướng, Cờ vây, chưa có gameplay online. Đừng nhầm thẻ giới thiệu với game chạy được.
+## Lưu dữ liệu bền vững
 
-## Deploy Render
+SQLite sử dụng `DB_PATH` (mặc định `./data/sandinh.sqlite`). **Filesystem của Render Free có thể bị xóa khi restart/redeploy**, vì vậy SQLite không phải phương án bền vững ở gói Free. Nếu có persistent disk, đặt `DB_PATH` tới nơi lưu vĩnh viễn (ví dụ `/var/data/sandinh.sqlite`). Nếu phải dùng Render Free lâu dài, nên chuyển sang PostgreSQL managed. Bộ nhớ RAM phòng đang mở vẫn bị xoá khi server restart; cần lưu session/room để phục hồi trận xuyên restart.
 
-1. Backup GitHub hiện tại, đưa toàn bộ mã nguồn (bao gồm `games.js`, `rules.js`, `public`, `server.js`) lên repository.
-2. Giữ tên dịch vụ trên Render và deploy commit mới.
-3. Chọn **Node version >= 22.13**, kiểm tra `/health`, `/api/stats`, trang chủ và WebSocket.
-4. Tải nhạc MP3 vào `public/assets/audio/bgm.mp3` nếu cần phát BGM.
-5. **Render Free dùng ổ tạm**: file SQLite có thể biến mất khi redeploy/restart. Muốn lưu lâu dài, chuyển sang dịch vụ có **persistent disk** và đặt `DB_PATH=/var/data/sandinh.sqlite` (hoặc tự chuyển sang Postgres managed). Lịch sử/đường dẫn phòng trong RAM cũng sẽ mất khi máy chủ khởi động lại; replay đã lưu trong DB sẽ được giữ nếu đĩa bền vững còn tồn tại, nhưng cần mã phòng cũ và phiên phòng để yêu cầu qua WebSocket. Việc xây dựng hồ sơ cá nhân và tra cứu lịch sử trên nhiều phiên vẫn chưa hoàn thiện.
-6. Không thay file nhạc bằng âm thanh thiếu quyền sử dụng.
+Sudoku localStorage vẫn tồn tại trên **cùng một trình duyệt/thiết bị** (trừ khi xoá dữ liệu website). Đây không phải đồng bộ tài khoản xuyên thiết bị.
 
-## Đã kiểm tra
+## Lưu ý chất lượng/kiểm thử
 
-- `node --check` server/client: đạt
-- `npm test`: 14/14 bài kiểm thử luật cũ đạt
-- Chưa chạy kiểm thử WebSocket end-to-end trong môi trường tạo bản ZIP do `ws` chưa tải được (npm install bị timeout). Hãy thử cả hai trình duyệt trước khi phát hành rộng.
-
-## Lưu ý quan trọng
-
-Đây là bản phát triển **V5 thử nghiệm**, giữ code V2 người dùng từng chỉnh trong `user-v2-original` nhưng chưa tự động hợp nhất toàn bộ giao diện V2 vào V5. Cần kiểm chứng các thay đổi trên Render và sao lưu trước khi cập nhật. Bản V5 chưa đạt AAA 3D hay đối thủ AI chiến thuật hoàn chỉnh.
+- Đã chạy 24/24 unit tests (bao gồm kiểm tra cờ vua chiếu bí, nhập thành, luật tướng không đối mặt, cờ vây khí/tự sát, Sudoku nghiệm duy nhất), kiểm tra cú pháp server và client, rà soát ID tham chiếu trong HTML.
+- Chưa kiểm tra end-to-end bằng hai thiết bị thật: môi trường này không cài được gói `ws` do truy cập npm bị lỗi DNS. Vì vậy hãy test multiplayer và bot trực tiếp sau khi deploy Render **trước khi mời nhiều người**.
+- Chưa có công cụ AI engine chuyên sâu (Stockfish, KataGo, Fairy-Stockfish); bot **Dễ/Vừa/Khó là heuristic** với nhiễu, không đạt trình độ cờ chuyên nghiệp.
+- Chưa tích hợp tất cả những chỉnh sửa riêng trong `user-v2-original`; thư mục lưu bản gốc của người dùng để tham khảo.
+- Các quân/hiệu ứng dùng CSS/WebGL 2.5D; chưa phải rigid-body physics hoặc hình ảnh AAA hoàn chỉnh.

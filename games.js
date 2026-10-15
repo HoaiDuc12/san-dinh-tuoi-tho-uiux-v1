@@ -1,16 +1,21 @@
+import {newStrategy,playStrategy} from './strategy-games.js';
 import { initialState as newQuan, applyMove as playQuan } from './rules.js';
 
 export const GAMES = {
   quan:{id:'quan',name:'Ô Ăn Quan',emoji:'🪨',description:'Nhặt sỏi, rải quân và ăn Quan.',players:2},
   ganh:{id:'ganh',name:'Cờ Gánh',emoji:'♟️',description:'Bước quân, gánh và vây quân đối phương.',players:2},
   caro:{id:'caro',name:'Caro học trò',emoji:'✏️',description:'Đặt 5 dấu liền nhau để chiến thắng.',players:2},
-  rps:{id:'rps',name:'Oẳn tù tì',emoji:'✊',description:'Chọn kín, cùng lật tay, thắng 3 lượt.',players:2}
+  rps:{id:'rps',name:'Oẳn tù tì',emoji:'✊',description:'Chọn kín, cùng lật tay, thắng 3 lượt.',players:2},
+  chess:{id:'chess',name:'Cờ vua',emoji:'♚',description:'Cờ vua quốc tế 8×8.',players:2},
+  xiangqi:{id:'xiangqi',name:'Cờ tướng',emoji:'帥',description:'Bàn sông Hán 9×10.',players:2},
+  go:{id:'go',name:'Cờ vây',emoji:'⚫',description:'Cờ vây 9×9.',players:2}
 };
 export const GAME_IDS=Object.keys(GAMES);
 const duplicate=o=>structuredClone(o);
 const win=(state,winner)=>{state.status='finished';state.winner=winner;};
 
 export function newMatch(id){
+ if(['chess','xiangqi','go'].includes(id))return newStrategy(id);
  if(id==='quan')return newQuan();
  if(id==='caro')return {cells:Array(100).fill(null),turn:0,status:'playing',winner:null,seq:0,last:-1,winning:[]};
  if(id==='ganh'){
@@ -110,6 +115,7 @@ function playRps(prev,seat,data){
  return {state,events};
 }
 export function applyAction(id,prev,seat,data={}){
+ if(['chess','xiangqi','go'].includes(id))return playStrategy(id,prev,seat,data);
  if(id==='quan')return playQuan(prev,seat,data.pit,data.dir);
  if(id==='ganh')return playGanh(prev,seat,data);
  if(id==='caro')return playCaro(prev,seat,data);

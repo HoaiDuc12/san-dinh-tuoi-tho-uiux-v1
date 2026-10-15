@@ -1,3 +1,4 @@
+import {legalFor} from './strategy-games.js';
 import http from 'node:http';
 import { readFile, stat } from 'node:fs/promises';
 import { resolve, extname, sep } from 'node:path';
@@ -43,7 +44,7 @@ function summarize(r,reason='finished'){
  if(!r.gameId||!r.match)return;
  const m=r.match;
  if(m.seq===0||r.archivedMatch===m)return;
- const record={id:randomBytes(5).toString('hex'),gameId:r.gameId,gameName:GAMES[r.gameId].name,at:new Date().toISOString(),reason,turns:m.seq,status:m.status,winner:m.status==='finished'?m.winner:null,players:r.players.map(p=>p.name),score:r.gameId==='quan'?m.score.map((x,i)=>x-(m.borrow[i]||0)):r.gameId==='rps'?m.scores:r.gameId==='ganh'?[m.cells.filter(x=>x===0).length,m.cells.filter(x=>x===1).length]:null};
+ const record={id:randomBytes(5).toString('hex'),gameId:r.gameId,gameName:GAMES[r.gameId].name,at:new Date().toISOString(),reason,turns:m.seq,status:m.status,winner:m.status==='finished'?m.winner:null,players:r.players.map(p=>p.name),score:r.gameId==='quan'?m.score.map((x,i)=>x-(m.borrow[i]||0)):r.gameId==='rps'?m.scores:r.gameId==='ganh'?[m.cells.filter(x=>x===0).length,m.cells.filter(x=>x===1).length]:r.gameId==='go'?m.score:null};
  r.archivedMatch=m;r.history.unshift(record);r.history=r.history.slice(0,30);storeRecord(r.id,record,r.timeline||[]);
 }
 function botAction(r){
@@ -59,12 +60,15 @@ function botAction(r){
   if(id==='caro')for(let idx=0;idx<100;idx++)if(m.cells[idx]===null)choices.push({idx});
   if(id==='ganh')for(let from=0;from<25;from++)if(m.cells[from]===1)for(let to=0;to<25;to++)if(m.cells[to]===null)choices.push({from,to});
   if(id==='rps')choices=[{choice:Math.floor(Math.random()*3)}];
+  if(['chess','xiangqi','go'].includes(id))choices=legalFor(id,m,seat);
   let picked=null,high=-Infinity;
   const difficulty=r.settings?.difficulty||'medium';
   if(difficulty==='easy')choices.sort(()=>Math.random()-.5);
   for(const a of choices){try{
    const result=applyAction(id,m,seat,a),st=result.state;
-   const weight=id==='quan'?(st.score[1]-m.score[1])*3+Math.random()*2:id==='ganh'?st.cells.filter(x=>x===1).length*3+Math.random():id==='caro'? (st.status==='finished'&&st.winner===1?100:Math.random()*8-Math.abs(a.idx%10-4.5)*.2):Math.random();
+   const value={P:1,N:3,B:3,R:5,Q:9,K:100,H:4,E:2,A:2,C:4};
+   const material=state=>state.board.reduce((v,p)=>v+(p?(p===p.toLowerCase()?1:-1)*(value[p.toUpperCase()]||1):0),0);
+   const weight=id==='quan'?(st.score[1]-m.score[1])*3+Math.random()*2:id==='ganh'?st.cells.filter(x=>x===1).length*3+Math.random():id==='caro'? (st.status==='finished'&&st.winner===1?100:Math.random()*8-Math.abs(a.idx%10-4.5)*.2):['chess','xiangqi'].includes(id)?(st.status==='finished'&&st.winner===1?500:material(st)*4+Math.random()*2):id==='go'?(st.last?.captured?.length||0)*12+Math.random()*4-(a.pass?10:0):Math.random();
    if((difficulty==='easy'?Math.random():difficulty==='medium'?weight+Math.random()*12:weight)>high){high=difficulty==='easy'?Math.random():difficulty==='medium'?weight+Math.random()*12:weight;picked={action:a,result};}
   }catch{}}
   if(!picked)return;
@@ -171,4 +175,4 @@ setInterval(()=>{
  for(const ws of wss.clients){if(!ws.alive){ws.terminate();continue;}ws.alive=false;ws.ping();}
  const now=Date.now();for(const [id,r] of rooms)if(now-r.updated>3*60*60*1000&&r.players.every(p=>!p.socket))rooms.delete(id);
 },30000).unref();
-server.listen(port,'0.0.0.0',()=>console.log(`Sân Đình Tuổi Thơ V5: http://localhost:${port}`));
+server.listen(port,'0.0.0.0',()=>console.log(`Sân Đình Tuổi Thơ V6: http://localhost:${port}`));

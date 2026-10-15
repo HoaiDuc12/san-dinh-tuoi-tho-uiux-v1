@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {newMatch,applyAction,ganhNeighbors,publicState,GAME_IDS} from '../games.js';
 
-test('four online titles available',()=>assert.deepEqual(GAME_IDS.sort(),['caro','ganh','quan','rps']));
+test('seven online titles available',()=>assert.deepEqual(GAME_IDS.sort(),['caro','chess','ganh','go','quan','rps','xiangqi']));
 test('Ô Ăn Quan only allows current player own side',()=>{
  const s=newMatch('quan');
  assert.throws(()=>applyAction('quan',s,1,{pit:6,dir:1}),/lượt/);
