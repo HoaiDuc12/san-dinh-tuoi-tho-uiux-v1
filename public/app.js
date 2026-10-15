@@ -49,7 +49,11 @@ function view(which){
  updateMobileHelpers();
 }
 document.addEventListener('click',event=>{const btn=event.target.closest('[data-view]');if(btn)view(btn.dataset.view);});
-function gameCard(g){return `<article class="game-card"><div class="card-art ${g.color}"><span class="card-status ${g.online?'':'soon'}">${g.online?'● CHƠI ONLINE':g.soloReady?'● CHƠI SOLO':'SẮP RA MẮT'}</span><span class="card-icon">${g.emoji}</span></div><div class="card-body"><h3>${g.name}</h3><p>${g.desc}</p><div class="card-footer"><small>${g.online?'♧ 2 người · Một mã phòng':g.soloReady?'✧ Chơi offline':'✧ Đang phát triển'}</small><button data-pick="${g.id}" ${g.online||g.soloReady?'':'disabled'}>${g.online||g.soloReady?'Chơi ngay →':'Chưa mở'}</button></div></div></article>`;}
+function gameCard(g){
+ const status=g.online?'● CHƠI ONLINE':g.soloReady?'● CHƠI SOLO':'SẮP RA MẮT';
+ const footer=g.online?'♧ 2 người · Một mã phòng':g.soloReady?'✧ Chơi offline':'✧ Đang phát triển';
+ const tags=[g.online?'Kết nối bạn bè':(g.soloReady?'Một mình vẫn vui':'Ý tưởng mới'), g.id==='sudoku'?'Lưu thành tích':(g.id==='quan'?'Biểu tượng tuổi thơ':g.id==='go'?'Bàn 9×9':'Nước đi chiến thuật')];
+ return `<article class="game-card game-${g.id}" data-game-card="${g.id}"><div class="card-art ${g.color}"><span class="card-status ${g.online?'':'soon'}">${status}</span><div class="card-pattern" aria-hidden="true"></div><div class="card-medal"><span class="card-icon">${g.emoji}</span></div><div class="card-mini-label">${g.online?'PHÒNG CHUNG':'THƯ VIỆN'}</div></div><div class="card-body"><h3>${g.name}</h3><p>${g.desc}</p><div class="card-tags">${tags.map(tag=>`<span>${tag}</span>`).join('')}</div><div class="card-footer"><small>${footer}</small><button data-pick="${g.id}" ${g.online||g.soloReady?'':'disabled'}>${g.online||g.soloReady?'Chơi ngay →':'Chưa mở'}</button></div></div></article>`;}
 function renderCards(filter='all'){
  $('featured-games').innerHTML=GAME_DATA.filter(g=>g.online).map(gameCard).join('');
  $('all-games').innerHTML=GAME_DATA.filter(g=>filter==='all'||(filter==='online'&&g.online)||(filter==='soon'&&!g.online)).map(gameCard).join('');
